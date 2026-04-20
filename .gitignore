@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+python/
+
+# Binary files and libraries (Specific to this project)
+*.exe
+*.dll
+*.spec
+*.so
+*.dylib
+
+# Tesseract / OCR related noise
+*.html
+tessdata/
+!tessdata/*.traineddata # Maybe keep traineddata? Actually usually excluded if large
+models/
+*.traineddata
+
+# Data and Logs
+data/
+db/
+*.log
+*.sqlite3
+*.csv
+*.xlsx
+trial  files to process/
+
+# IDEs / Editors / AI tools
+.vscode/
+.idea/
+.claude/
+.gemini/
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Project specific
+ambiguous_words.1.html
+classifier_tester.1.html
+cntraining.1.html
+combine_lang_model.1.html
+combine_tessdata.1.html
+dawg2wordlist.1.html
+lstmeval.1.html
+lstmtraining.1.html
+merge_unicharsets.1.html
+mftraining.1.html
+set_unicharset_properties.1.html
+shapeclustering.1.html
+tesseract.1.html
+text2image.1.html
+unicharambigs.5.html
+unicharset.5.html
+unicharset_extractor.1.html
+wordlist2dawg.1.html
