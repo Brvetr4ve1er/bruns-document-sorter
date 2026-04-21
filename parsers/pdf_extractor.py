@@ -16,12 +16,16 @@ import fitz  # PyMuPDF
 
 MIN_TEXT_CHARS = 30   # below this → treat page as image-only
 
-# Point pytesseract at the default Windows install location automatically
-_TESSERACT_DEFAULT = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Tesseract configuration
+_LOCAL_TESS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tesseract.exe")
+_SYSTEM_TESS = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 try:
     import pytesseract
-    if os.path.exists(_TESSERACT_DEFAULT) and not pytesseract.pytesseract.tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = _TESSERACT_DEFAULT
+    if os.path.exists(_LOCAL_TESS):
+        pytesseract.pytesseract.tesseract_cmd = _LOCAL_TESS
+    elif os.path.exists(_SYSTEM_TESS):
+        pytesseract.pytesseract.tesseract_cmd = _SYSTEM_TESS
 except ImportError:
     pass
 

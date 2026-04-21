@@ -108,29 +108,46 @@ def fetch_stats() -> dict:
             "by_carrier": [(r[0], r[1]) for r in bc]}
 
 def process_pdf_file(pdf_path: str, original_name: str = None) -> dict:
+    """Run a PDF through the full pipeline. Never raises — always returns a status dict."""
     from parsers.pdf_extractor import extract_text
     from agents.parser_agent import parse_document
     from utils.validator import parse_and_validate
     from utils.logger import log_result
     filename = original_name or os.path.basename(pdf_path)
+
+    # File must exist and be non-empty
+    if not os.path.isfile(pdf_path):
+        return {"file": filename, "status": "FILE_NOT_FOUND", "error": f"Path not found: {pdf_path}"}
+    try:
+        if os.path.getsize(pdf_path) == 0:
+            return {"file": filename, "status": "EMPTY_FILE", "error": "File is 0 bytes"}
+    except OSError as e:
+        return {"file": filename, "status": "FILE_ERROR", "error": str(e)}
+
     try:
         text = extract_text(pdf_path)
     except Exception as e:
         return {"file": filename, "status": "EXTRACTION_FAILED", "error": str(e)}
-    if not text.strip():
+    if not text or not text.strip():
         return {"file": filename, "status": "EMPTY_PDF", "error": "No text extracted"}
     raw, llm_err = parse_document(text)
     if llm_err:
         return {"file": filename, "status": "LLM_FAILED", "error": llm_err}
     model, raw_dict, val_err = parse_and_validate(raw)
     if val_err or model is None:
+        # Still log the failure so non-technical users can see it in the Logs tab
+        try: log_result(filename, raw_dict, False, "—", error=val_err)
+        except Exception: pass
         return {"file": filename, "status": "VALIDATION_FAILED", "error": val_err, "raw": raw_dict}
     try:
         from database_logic.database import upsert_shipment
         action, sid = upsert_shipment(model, source_file=filename)
     except Exception as e:
+        try: log_result(filename, raw_dict, False, "—", error=f"DB: {e}")
+        except Exception: pass
         return {"file": filename, "status": "DB_ERROR", "error": str(e)}
-    log_result(filename, raw_dict, True, action)
+    try: log_result(filename, raw_dict, True, action)
+    except Exception: pass
     return {"file": filename, "status": "OK", "db_action": action,
             "shipment_id": sid, "data": raw_dict,
             "container_count": len(model.containers)}
@@ -221,6 +238,18 @@ def render_navbar():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 page = st.session_state.get("current_page", "dashboard")
+
+# Debug mode shows full stack traces; otherwise we render a friendly error box.
+_DEBUG = os.environ.get("BRUNS_DEBUG", "").lower() in ("1", "true", "yes")
+
+
+def _friendly_crash(exc: Exception):
+    """Render a clear, non-technical error panel when a page crashes."""
+    st.error("❌ Something went wrong while loading this page.")
+    st.caption("Try switching to another page, or restart the app from START_APP.bat.")
+    with st.expander("Technical details"):
+        import traceback
+        st.code(traceback.format_exc() if _DEBUG else f"{type(exc).__name__}: {exc}")
 
 
 # ── DASHBOARD ─────────────────────────────────────────────────────────────────
@@ -505,10 +534,11 @@ elif page == "edit":
 elif page == "processing":
     render_page_header("Processing", "Import PDF documents — upload or batch from directory", "⚙️")
 
-    # Ollama status
+    # Ollama status — hit /api/tags (root of /api/generate returns 404)
     try:
         import requests, config as _cfg2
-        r = requests.get(_cfg2.OLLAMA_URL.replace("/api/generate",""), timeout=2)
+        _base = _cfg2.OLLAMA_URL.replace("/api/generate", "").rstrip("/")
+        r = requests.get(f"{_base}/api/tags", timeout=2)
         if r.status_code == 200:
             st.markdown("""<div style="display:inline-flex;align-items:center;gap:8px;
                 background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);

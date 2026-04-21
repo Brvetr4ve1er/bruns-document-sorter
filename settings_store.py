@@ -27,17 +27,27 @@ def load() -> dict:
 
 
 def save(settings: dict):
+    """Atomic write: write to a temp file then rename, so a crash mid-write
+    can never leave settings.json corrupted."""
     os.makedirs(os.path.dirname(_SETTINGS_PATH), exist_ok=True)
-    with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+    tmp = _SETTINGS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(settings, f, indent=2)
+    os.replace(tmp, _SETTINGS_PATH)
 
 
 def apply_to_config(settings: dict):
-    """Push runtime settings into loaded config module."""
+    """Push runtime settings into the loaded config module. Missing keys fall
+    back to the defaults so partially-written settings files still work."""
     import config
-    config.OLLAMA_URL = settings["ollama_url"]
-    config.OLLAMA_MODEL = settings["ollama_model"]
-    config.OLLAMA_TIMEOUT = settings["ollama_timeout"]
-    config.INPUT_DIR = settings["input_dir"]
-    config.LOGS_DIR = settings["logs_dir"]
-    config.DB_PATH = settings["db_path"]
+    merged = {**DEFAULTS, **(settings or {})}
+    # Normalise Ollama URL — user may have given base URL without /api/generate
+    url = (merged["ollama_url"] or "").rstrip("/")
+    if url and not url.endswith("/api/generate"):
+        url = url + "/api/generate"
+    config.OLLAMA_URL = url or DEFAULTS["ollama_url"]
+    config.OLLAMA_MODEL = merged["ollama_model"]
+    config.OLLAMA_TIMEOUT = merged["ollama_timeout"]
+    config.INPUT_DIR = merged["input_dir"]
+    config.LOGS_DIR = merged["logs_dir"]
+    config.DB_PATH = merged["db_path"]
