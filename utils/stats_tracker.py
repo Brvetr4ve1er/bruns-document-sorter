@@ -1,5 +1,5 @@
 """IMPROVEMENT 14: Processing Stats Dashboard + IMPROVEMENT 8: Performance Metrics"""
-from db.database import get_connection, increment_processing_stat, get_processing_stats
+from database_logic.database import get_connection, increment_processing_stat, get_processing_stats
 from datetime import datetime, timedelta
 import json
 

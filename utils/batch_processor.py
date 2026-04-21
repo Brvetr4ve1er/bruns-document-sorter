@@ -1,5 +1,5 @@
 """IMPROVEMENT 2: Batch Queue & Background Processing + IMPROVEMENT 11: Bulk Operations"""
-from db.database import (
+from database_logic.database import (
     get_connection, record_processing_queue, update_queue_status,
     get_queue_status, log_change
 )

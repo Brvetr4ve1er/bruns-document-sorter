@@ -1,7 +1,7 @@
 """File Tracker Component - Display processed files and extraction results"""
 import streamlit as st
 import pandas as pd
-from db.database import get_connection
+from database_logic.database import get_connection
 from pathlib import Path
 import os
 

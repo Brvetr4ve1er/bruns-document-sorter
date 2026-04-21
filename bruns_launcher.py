@@ -88,7 +88,7 @@ def main():
 
     # ── Launch Streamlit ──────────────────────────────────────────────────────
     # When frozen, streamlit CLI is bundled; we import it directly instead
-    app_script = str(base / "app_new.py")
+    app_script = str(base / "app.py")
 
     streamlit_args = [
         "streamlit", "run", app_script,

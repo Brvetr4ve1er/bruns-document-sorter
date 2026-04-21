@@ -1,251 +1,42 @@
-BRUNS LOGISTICS DATA SCRAPER - SETUP GUIDE
-============================================
+# 🚢 BRUNs Logistics - Data Scraper
 
-WHAT IS THIS APP?
-A tool that reads PDF shipping documents, extracts logistics data (containers, shipments, ports), and saves it to a database. Works completely offline - no internet or paid services needed.
+A premium, AI-powered logistics dashboard that extracts shipment and container data from PDF documents using Local LLMs (Ollama) and OCR.
 
+---
 
-QUICK START (3 STEPS)
-====================
+### 🚀 Quick Start
+To launch the application, simply double-click the file below:
 
-1. Double-click START.bat
-2. Wait 30 seconds for Python setup
-3. Browser opens at http://localhost:8501
+### 👉 **`START_APP.bat`**
 
-Done! The app is running.
+This script will automatically:
+1.  Verify your Python environment.
+2.  Install all necessary dependencies.
+3.  Check if **Ollama** is running (required for AI parsing).
+4.  Launch the Dashboard in your browser.
 
+---
 
-SYSTEM REQUIREMENTS
-===================
+### 🛠️ Prerequisites
+*   **Python 3.10+**: Ensure Python is installed and added to your [Windows PATH](https://python.org).
+*   **Ollama**: Install from [ollama.com](https://ollama.com) and ensure it is running in the background.
+    *   *Recommended Model*: `llama3` or `llama3.2-vision` (for OCR).
+*   **Tesseract OCR** (Optional): For processing scanned images. The app includes a portable version, but installing it system-wide is recommended for better performance.
 
-Windows 10 or 11 (64-bit)
-Python 3.10 or higher
-2 GB RAM minimum
-Optional: Ollama (for AI features)
+---
 
+### 📁 Project Structure
+*   **`app.py`**: The main Streamlit application.
+*   **`database_logic/`**: Database schema and operations (SQLite).
+*   **`agents/`**: AI logic for parsing document text.
+*   **`parsers/`**: PDF text extraction and OCR fallback.
+*   **`ui/`**: Modern glass-morphism interface components.
+*   **`data/`**: Location for `logistics.db`, input PDFs, and exported results.
 
-FULL SETUP STEPS
-================
+---
 
-STEP 1: Check Python is Installed
+### 🛑 Stopping the App
+To stop the application, just close the Command Prompt window that opened when you ran the script.
 
-Open Command Prompt and type:
-  python --version
-
-You should see Python 3.10.x or higher.
-
-If not:
-  1. Go to python.org/downloads
-  2. Download Python 3.10+
-  3. RUN the installer
-  4. CHECK the box "Add Python to PATH"
-  5. Restart Command Prompt
-
-
-STEP 2: Find Your Project Folder
-
-Open Command Prompt and go to:
-  cd C:\Users\YOUR_NAME\Documents\BRUNs logistics data scraper
-
-(Replace YOUR_NAME with your actual Windows username)
-
-
-STEP 3: Run the App
-
-Option A - Easy (Recommended):
-  Double-click START.bat
-
-Option B - Manual:
-  python run.py
-
-The app opens at: http://localhost:8501
-
-
-STEP 4: Use the App
-
-1. Go to Processing tab
-2. Upload PDFs
-3. Check Containers tab to see results
-4. Use Export tab to download data as Excel
-
-
-OPTIONAL: Install Tesseract OCR (For Scanned PDFs)
-===================================================
-
-If your PDFs are scanned images, install Tesseract:
-
-1. Double-click install_tesseract.bat
-2. Wait for installation
-3. Restart the app
-
-If it asks for admin password, click Yes.
-
-Tesseract helps extract text from image-based PDFs that don't have embedded text.
-
-
-OPTIONAL: Install Ollama (For Advanced AI)
-============================================
-
-Ollama adds AI vision features for difficult PDFs:
-
-1. Go to ollama.com
-2. Download and install Ollama
-3. Open Command Prompt and run:
-     ollama pull llama2-vision
-4. In the app, go to Settings > AI/Ollama
-5. Click "Test Connection"
-
-
-HOW TO USE THE APP
-==================
-
-DASHBOARD
-  View summary of all processed documents
-
-CONTAINERS
-  Search and filter shipments by:
-    - Container number
-    - Status
-    - Port
-    - Vessel
-    - Date range
-  Click a row to see full details
-
-EDIT CONTAINER
-  Update container information:
-    - Status and delivery dates
-    - Transport details
-    - Demurrage charges
-    - Billing info
-    - Customs/documentation
-
-PROCESSING
-  1. Click Upload PDFs
-  2. Select document files
-  3. Wait for extraction
-  4. Check results in table
-
-EXPORT
-  1. Go to Export tab
-  2. Pick columns you want
-  3. Use preset templates (All, Essential, etc.)
-  4. Download as Excel or CSV
-
-SETTINGS
-  Configure the app:
-    - Test AI/Ollama connection
-    - Check database status
-    - Change theme colors
-
-LOGS
-  View app activity and error messages
-
-
-TROUBLESHOOTING
-===============
-
-"Python not found" error
-  - Download Python from python.org
-  - During install, CHECK "Add Python to PATH"
-  - Restart Command Prompt
-  - Try again
-
-App won't start
-  - Make sure port 8501 is not in use
-  - Close other Streamlit apps
-  - Try: streamlit run app.py --server.port 8502
-
-PDFs not extracting text
-  - Check if PDF is scanned/image-based
-  - Install Tesseract OCR (see above)
-  - Go to Settings > OCR Diagnostic
-
-Tesseract not found
-  - Go to C:\Program Files\Tesseract-OCR
-  - Check if tesseract.exe exists there
-  - If not, reinstall using install_tesseract.bat
-
-Ollama not connecting
-  - Make sure Ollama is running
-  - Go to Settings > AI/Ollama
-  - Click "Test Connection"
-
-
-DATA STORAGE
-============
-
-The app creates these folders:
-
-data/input/      - Upload PDFs here
-data/output/     - Processed files
-data/logs/       - App activity logs
-data/bruns.db    - SQLite database (your data)
-
-All data stays on your computer. Nothing goes to the internet.
-
-
-SHARING WITH FRIENDS
-====================
-
-To send this app to a friend:
-
-1. Run build_exe.bat
-2. Zip the entire dist\BRUNs\ folder
-3. Send the zip file to your friend
-4. Friend just needs Ollama installed (no Python needed)
-
-
-COMMON TASKS
-============
-
-Backup your data:
-  Copy data/bruns.db to data/bruns.db.backup
-
-Clear all data:
-  1. Go to Settings
-  2. Click "Clear All Data"
-  3. Confirm
-
-Reset everything:
-  Delete the "data" folder and restart the app
-
-
-TIPS
-====
-
-- First run takes 1-2 minutes to set up Python
-- Upload multiple PDFs at once to save time
-- Use Containers tab to search by any field
-- Export to Excel for analysis in spreadsheets
-- Check Logs tab if something goes wrong
-
-
-WHAT TO DO NEXT
-===============
-
-1. Double-click START.bat
-2. Upload a test PDF
-3. Check the Containers tab for results
-4. Try the Export tab to download data
-5. Explore the Filters to search documents
-
-
-HELP & SUPPORT
-==============
-
-If something breaks:
-  1. Check the Logs tab in the app
-  2. See Troubleshooting section above
-  3. Make sure Python is installed correctly
-
-Need more info:
-  - Python: python.org
-  - Ollama: ollama.com
-  - Tesseract: github.com/UB-Mannheim/tesseract-ocr-w64
-
-
-VERSION
-=======
-
-Status: Production Ready
-Last Updated: 2026-04-20
+---
+*Created for BRUNs Logistics — Phase 3 (Final)*

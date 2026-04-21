@@ -1,5 +1,5 @@
 """IMPROVEMENT 6: Document Type Auto-Categorization"""
-from db.database import record_classification, get_classification
+from database_logic.database import record_classification, get_classification
 from enum import Enum
 import re
 

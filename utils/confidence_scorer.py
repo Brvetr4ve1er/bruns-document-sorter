@@ -1,5 +1,5 @@
 """IMPROVEMENT 3 & 9: Data Confidence Scores"""
-from db.database import record_confidence_score, get_container_confidence
+from database_logic.database import record_confidence_score, get_container_confidence
 import re
 
 

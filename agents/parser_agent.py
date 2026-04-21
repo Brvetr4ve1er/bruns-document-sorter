@@ -65,7 +65,7 @@ class ParserAgent:
         """
         try:
             from parsers.pdf_extractor import extract_text
-            from db.database import upsert_shipment
+            from database_logic.database import upsert_shipment
             from models.schema import ShipmentData
             import os
 

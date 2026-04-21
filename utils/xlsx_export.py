@@ -6,7 +6,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 from config import XLSX_COLUMNS
-from db.database import get_connection
+from database_logic.database import get_connection
 
 
 def _parse_date(s):

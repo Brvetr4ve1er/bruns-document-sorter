@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from utils.filter_manager import FilterManager
 from utils.batch_processor import BatchProcessor
-from db.database import get_connection
+from database_logic.database import get_connection
 
 
 def render_filter_controls() -> dict:

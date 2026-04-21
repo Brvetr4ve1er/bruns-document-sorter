@@ -1,6 +1,6 @@
 """IMPROVEMENT 5: Smart Filter Save & Recall"""
 import pandas as pd
-from db.database import (
+from database_logic.database import (
     save_filter_preset, get_filter_preset, list_filter_presets,
     delete_filter_preset, get_connection
 )

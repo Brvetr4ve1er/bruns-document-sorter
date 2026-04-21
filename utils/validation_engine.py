@@ -1,5 +1,5 @@
 """IMPROVEMENT 7: Validation Rules Engine"""
-from db.database import record_validation_issue, get_unresolved_issues
+from database_logic.database import record_validation_issue, get_unresolved_issues
 from datetime import datetime
 
 

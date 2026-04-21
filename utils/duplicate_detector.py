@@ -1,6 +1,6 @@
 """IMPROVEMENT 1: Duplicate Detection & Merge"""
 import sqlite3
-from db.database import get_connection, register_file_hash, get_file_hash
+from database_logic.database import get_connection, register_file_hash, get_file_hash
 from utils.file_hasher import compute_file_hash
 
 

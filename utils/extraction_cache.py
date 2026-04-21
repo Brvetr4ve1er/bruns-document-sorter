@@ -1,7 +1,7 @@
 """IMPROVEMENT 17: Cache Extraction Results"""
 import sqlite3
 import json
-from db.database import get_connection
+from database_logic.database import get_connection
 
 
 def cache_extraction(file_hash: str, extraction_result: dict) -> bool:
