@@ -1,6 +1,11 @@
 import os
 import sys
 
+# Ensure project root is in sys.path
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 from config import INPUT_DIR
 from parsers.pdf_extractor import extract_text
 from agents.parser_agent import parse_document

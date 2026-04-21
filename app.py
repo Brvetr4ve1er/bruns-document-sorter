@@ -9,7 +9,10 @@ from datetime import datetime, date
 import streamlit as st
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Ensure project root is in sys.path
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 import settings_store
 from db.database import init_db, export_to_csv, update_container
