@@ -1,7 +1,37 @@
-PyMuPDF>=1.23.0
-requests>=2.31.0
-pydantic>=2.0.0
-streamlit>=1.35.0
-pandas>=2.0.0
-openpyxl>=3.1.0
-pytesseract>=0.3.10
+# BRUNs - runtime dependencies (UTF-8)
+#
+# Top-level packages only. Pip resolves transitive deps automatically.
+# To regenerate after adding/removing imports:
+#     python tests/_third_party_scan.py
+#
+# For build-from-source (PyInstaller .exe), install pyinstaller separately
+# in a build venv - it is NOT a runtime dep.
+
+# --- Data extraction & OCR ---------------------------------------------
+PyMuPDF==1.27.2.2
+pytesseract==0.3.13
+Pillow==12.2.0
+passporteye==2.2.2
+mrz==0.6.1
+
+# --- LLM client ---------------------------------------------------------
+requests==2.33.1
+
+# --- Schemas & validation ----------------------------------------------
+pydantic==2.13.2
+
+# --- Storage & search --------------------------------------------------
+chromadb==1.5.8
+pandas==3.0.2
+openpyxl==3.1.5
+
+# --- Pipeline & matching -----------------------------------------------
+huey==3.0.0
+RapidFuzz==3.14.5
+
+# --- BI bridge ---------------------------------------------------------
+Flask==3.1.3
+flask-cors==5.0.1
+
+# --- Dev / test --------------------------------------------------------
+pytest==9.0.3
