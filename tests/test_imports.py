@@ -44,10 +44,14 @@ GHOST_TARGETS: set[str] = {
 ROOT_FILE_FORBIDDEN: set[str] = set()
 
 # Directories the scan walks but ignores entirely.
+# `ui/` and `logistics_app/` are legacy Streamlit code present on disk after
+# the git merge restored them, but they are NOT active Flask code — they
+# still import streamlit which is fine for dead files, just not for live code.
 EXCLUDE_DIRS = {
     ".venv", ".git", "__pycache__", ".pytest_cache",
     "tessdata", "tesseract_bin", "doc", "trial_files",
     "data", "exports", "node_modules", "build", "dist",
+    "ui", "logistics_app",   # legacy Streamlit — excluded from live-code checks
 }
 
 
