@@ -1016,6 +1016,119 @@ def _fetch_container_row(container_id: int) -> dict | None:
         conn.close()
 
 
+@app.route("/files/logistics/shipment/<int:shipment_id>")
+def ui_serve_logistics_shipment_file(shipment_id: int):
+    """Serve the source PDF for a shipment (looked up from shipments.source_file)."""
+    if not os.path.exists(LOGISTICS_DB):
+        abort(404)
+    conn = get_connection(LOGISTICS_DB)
+    try:
+        row = conn.execute(
+            "SELECT source_file FROM shipments WHERE id = ?", (shipment_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row["source_file"]:
+        abort(404, "No source file recorded for this shipment")
+    path = row["source_file"]
+    if not os.path.isfile(path):
+        # Try looking in trial_files and data/input as fallback
+        base = os.path.basename(path)
+        for search_dir in ("data/trial_files", "data/input", "fresh documents/logistics documents"):
+            candidate = os.path.join(ROOT_DIR, search_dir, base)
+            if os.path.isfile(candidate):
+                path = candidate
+                break
+        else:
+            abort(404, f"Source file not found: {base}")
+    mime, _ = mimetypes.guess_type(path)
+    return send_file(path, mimetype=mime or "application/pdf")
+
+
+@app.route("/logistics/containers/<int:container_id>", methods=["GET"])
+def ui_logistics_container_detail(container_id: int):
+    """Split-view: original PDF on the left, editable form + Copy JSON on the right."""
+    row = _fetch_container_row(container_id)
+    if not row:
+        abort(404, f"Container {container_id} not found")
+    # Build the extracted JSON for display + copy button
+    extracted_json = json.dumps(
+        {k: v for k, v in row.items() if v is not None},
+        indent=2,
+        default=str,
+        ensure_ascii=False,
+    )
+    # Find shipment_id for the file-serve route
+    conn = get_connection(LOGISTICS_DB)
+    try:
+        ship = conn.execute(
+            "SELECT id, source_file FROM shipments WHERE id = "
+            "(SELECT shipment_id FROM containers WHERE id = ?)",
+            (container_id,),
+        ).fetchone()
+        shipment_id = ship["id"] if ship else None
+        source_file = ship["source_file"] if ship else None
+        source_basename = os.path.basename(source_file) if source_file else None
+        ext = os.path.splitext(source_file or "")[1].lower()
+    finally:
+        conn.close()
+    has_file = bool(source_file)
+    return render_template(
+        "logistics/container_detail.html",
+        mode="logistics",
+        c=row,
+        fields=EDITABLE_FIELDS,
+        extracted_json=extracted_json,
+        shipment_id=shipment_id,
+        source_basename=source_basename,
+        has_file=has_file,
+        ext=ext,
+    )
+
+
+@app.route("/logistics/containers/<int:container_id>", methods=["POST"])
+def ui_logistics_container_update(container_id: int):
+    """HTMX inline-edit for a container row."""
+    if not os.path.exists(LOGISTICS_DB):
+        abort(404)
+    updates: dict = {}
+    for name, kind in EDITABLE_FIELDS.items():
+        if name not in request.form:
+            continue
+        raw = request.form.get(name, "").strip()
+        if raw == "":
+            updates[name] = None
+        elif kind == "number":
+            try:
+                updates[name] = float(raw)
+            except ValueError:
+                updates[name] = None
+        else:
+            updates[name] = raw
+    if not updates:
+        return render_template("logistics/_edit_result.html",
+                               ok=False, msg="No fields to update",
+                               container_id=container_id)
+    conn = get_connection(LOGISTICS_DB)
+    try:
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        params = list(updates.values()) + [container_id]
+        conn.execute(
+            f"UPDATE containers SET {cols}, modified_at = datetime('now') WHERE id = ?",
+            params,
+        )
+        conn.commit()
+        return render_template("logistics/_edit_result.html",
+                               ok=True, msg=f"Saved — {len(updates)} field(s) updated.",
+                               container_id=container_id)
+    except Exception as e:
+        return render_template("logistics/_edit_result.html",
+                               ok=False, msg=f"DB error: {e}",
+                               container_id=container_id)
+    finally:
+        conn.close()
+
+
 @app.route("/logistics/edit/<int:container_id>", methods=["GET"])
 def ui_logistics_edit(container_id: int):
     row = _fetch_container_row(container_id)
