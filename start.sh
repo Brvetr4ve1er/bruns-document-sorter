@@ -57,12 +57,32 @@ fi
 # shellcheck source=/dev/null
 source "$VENV_DIR/bin/activate"
 
+# Force UTF-8 for stdout/stderr (French + Arabic chars in logs).
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+
 # ── Check 2: dependencies installed ─────────────────────────────────────────
 if ! python -c "import flask, pydantic, chromadb" >/dev/null 2>&1; then
     echo "${YELLOW}[!]${RESET} Some Python dependencies are missing."
     echo "    Re-running install.sh to repair..."
     bash ./install.sh
     source "$VENV_DIR/bin/activate"
+fi
+
+# ── Check 2b: server module imports cleanly ────────────────────────────────
+# Surface startup-time crashes BEFORE launching, so the user sees the real
+# traceback instead of just "Internal Server Error" in the browser.
+if ! python -c "from core.api.server import app" >/dev/null 2>&1; then
+    echo
+    echo "${RED}[!!]${RESET} Application import FAILED. Running diagnostic..."
+    echo
+    python -m core.diagnostics
+    echo
+    echo "============================================================"
+    echo "  Fix items marked [FAIL] above, then re-run start.sh"
+    echo "  Full report at data/logs/diagnose.txt"
+    echo "============================================================"
+    exit 1
 fi
 
 # ── Check 3: Ollama warning ─────────────────────────────────────────────────

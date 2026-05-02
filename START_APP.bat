@@ -56,6 +56,10 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
 
 call "%VENV_DIR%\Scripts\activate.bat"
 
+:: Force UTF-8 for stdout/stderr so French + Arabic chars in logs don't crash.
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
+
 :: ── Check 2: requirements.txt vs installed packages ─────────────────────────
 :: Quick smoke test: try importing flask. If it fails, deps are not installed.
 python -c "import flask, pydantic, chromadb" >nul 2>&1
@@ -70,6 +74,25 @@ if %ERRORLEVEL% NEQ 0 (
         exit /b 1
     )
     call "%VENV_DIR%\Scripts\activate.bat"
+)
+
+:: ── Check 2b: server module imports cleanly (catches startup-time crashes) ──
+:: This used to surface only as "Internal Server Error" in the browser. Now
+:: we catch it before launching so the user sees the actual traceback.
+python -c "from core.api.server import app; print('OK', len(list(app.url_map.iter_rules())), 'routes')" 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo  [!!] Application import FAILED. The server cannot start.
+    echo       Running diagnostic to identify the cause...
+    echo.
+    python -m core.diagnostics
+    echo.
+    echo  ============================================================
+    echo    Fix the items marked [FAIL] above, then re-run START_APP.bat
+    echo    Full report saved to data\logs\diagnose.txt
+    echo  ============================================================
+    pause
+    exit /b 1
 )
 
 :: ── Check 3: Ollama (warning only, not a hard requirement) ──────────────────
@@ -120,5 +143,17 @@ echo.
 start "" /min cmd /c "timeout /t 2 >nul && start http://localhost:%PORT%/"
 
 python -m core.api.server
+set "RC=!ERRORLEVEL!"
+if !RC! NEQ 0 (
+    echo.
+    echo  ============================================================
+    echo  [!!] Server exited with code !RC!.
+    echo       See the traceback above, plus data\logs\bruns.log for
+    echo       the full structured log.
+    echo.
+    echo       If you do not understand the error, run DIAGNOSE.bat
+    echo       and share data\logs\diagnose.txt with support.
+    echo  ============================================================
+)
 
 pause
