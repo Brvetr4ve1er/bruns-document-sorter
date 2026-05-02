@@ -1,0 +1,63 @@
+{# Travel polling target. Same pattern as logistics, but result fields
+   and color match the secondary (travel) accent. #}
+
+{% set terminal = job.status in ("COMPLETED", "FAILED") %}
+{% set color = (
+    "success"   if job.status == "COMPLETED" else
+    "error"     if job.status == "FAILED"   else
+    "secondary"
+) %}
+{% set last_log = job.logs[-1] if job.logs else "" %}
+
+<div id="job-{{ job.id }}"
+     class="rounded-xl border border-base-content/10 bg-base-200/40 p-3"
+     {% if not terminal %}
+       hx-get="/travel/process-status/{{ job.id }}"
+       hx-trigger="every 1s"
+       hx-swap="outerHTML"
+     {% endif %}>
+
+  <div class="flex items-center gap-3 mb-2">
+    {% if job.status == "COMPLETED" %}
+      <span class="text-success text-lg">✓</span>
+    {% elif job.status == "FAILED" %}
+      <span class="text-error text-lg">✕</span>
+    {% else %}
+      <span class="loading loading-spinner loading-xs text-secondary"></span>
+    {% endif %}
+
+    <span class="font-mono text-sm flex-1 truncate">
+      {{ job.input_data.file_path.split("\\")[-1].split("/")[-1] if job.input_data and job.input_data.file_path else "—" }}
+    </span>
+
+    <span class="badge badge-{{ color }} badge-outline badge-sm">{{ job.status }}</span>
+  </div>
+
+  <progress class="progress progress-{{ color }} w-full h-1.5 mb-2"
+            value="{{ percent }}" max="100"></progress>
+
+  {% if job.status == "COMPLETED" and job.result_data %}
+    <div class="text-xs text-base-content/60 mt-2">
+      {% set d = job.result_data %}
+      Extracted —
+      {% if d.full_name %}<span class="font-mono text-secondary">{{ d.full_name }}</span> · {% endif %}
+      {% if d.doc_number %}{{ d.doc_number }} · {% endif %}
+      {% if d.doc_type %}{{ d.doc_type }}{% endif %}
+    </div>
+  {% elif job.status == "FAILED" %}
+    <div class="text-xs text-error mt-2">{{ job.error_message or "Unknown error" }}</div>
+  {% else %}
+    <div class="text-xs text-base-content/50 mt-1 truncate">{{ last_log }}</div>
+  {% endif %}
+
+  {% if terminal %}
+  <details class="mt-2">
+    <summary class="text-xs text-base-content/40 cursor-pointer select-none">
+      Logs ({{ job.logs|length }})
+    </summary>
+    <div class="text-xs font-mono bg-base-300/50 rounded p-2 mt-1 max-h-40 overflow-y-auto">
+      {% for line in job.logs %}<div>{{ line }}</div>{% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>

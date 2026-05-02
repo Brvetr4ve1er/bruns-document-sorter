@@ -1,0 +1,113 @@
+{# Returned by POST /logistics/documents/<id>/reextract.
+   Shows added / removed / changed fields for operator confirmation. #}
+
+{% if not ok %}
+<div class="alert alert-error shadow-md">
+  <span class="text-lg">✕</span>
+  <div>
+    <div class="font-bold">Re-extraction failed</div>
+    <div class="text-xs opacity-80">{{ error }}</div>
+  </div>
+</div>
+{% else %}
+
+<div class="space-y-4">
+
+  {# ─── Summary banner ─── #}
+  <div class="alert {% if diff.n_added or diff.n_changed or diff.n_removed %}alert-info{% else %}alert-success{% endif %} shadow-sm">
+    <div>
+      <div class="font-bold mb-1">
+        {% if diff.n_added or diff.n_changed or diff.n_removed %}
+          Re-extraction found differences:
+        {% else %}
+          ✓ Re-extraction matches the stored data exactly. No changes.
+        {% endif %}
+      </div>
+      {% if diff.n_added or diff.n_changed or diff.n_removed %}
+      <div class="text-xs flex gap-3">
+        <span class="text-success">+{{ diff.n_added }} added</span>
+        <span class="text-warning">~{{ diff.n_changed }} changed</span>
+        <span class="text-error">−{{ diff.n_removed }} removed</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ─── ADDED fields ─── #}
+  {% if diff.added %}
+  <div>
+    <div class="text-xs uppercase tracking-wider text-base-content/60 mb-2">
+      <span class="text-success">+</span> Added ({{ diff.n_added }})
+    </div>
+    <div class="bg-base-200/40 rounded-lg p-3 space-y-1 max-h-[30vh] overflow-y-auto">
+      {% for path, val in diff.added.items() %}
+      <div class="grid grid-cols-[200px_1fr] gap-2 items-center text-xs">
+        <span class="font-mono text-base-content/60 truncate" title="{{ path }}">{{ path }}</span>
+        <span class="font-mono text-success break-all">{{ val if val is not none else "(null)" }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ─── CHANGED fields ─── #}
+  {% if diff.changed %}
+  <div>
+    <div class="text-xs uppercase tracking-wider text-base-content/60 mb-2">
+      <span class="text-warning">~</span> Changed ({{ diff.n_changed }})
+    </div>
+    <div class="bg-base-200/40 rounded-lg p-3 space-y-2 max-h-[30vh] overflow-y-auto">
+      {% for path, vals in diff.changed.items() %}
+      <div class="grid grid-cols-[200px_1fr] gap-2 items-start text-xs">
+        <span class="font-mono text-base-content/60 truncate" title="{{ path }}">{{ path }}</span>
+        <div class="space-y-1">
+          <div class="font-mono"><span class="text-error">−</span>
+            <span class="line-through opacity-70">{{ vals.old if vals.old is not none else "(null)" }}</span></div>
+          <div class="font-mono"><span class="text-success">+</span>
+            {{ vals.new if vals.new is not none else "(null)" }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ─── REMOVED fields ─── #}
+  {% if diff.removed %}
+  <div>
+    <div class="text-xs uppercase tracking-wider text-base-content/60 mb-2">
+      <span class="text-error">−</span> Removed ({{ diff.n_removed }})
+    </div>
+    <div class="bg-base-200/40 rounded-lg p-3 space-y-1 max-h-[30vh] overflow-y-auto">
+      {% for path, val in diff.removed.items() %}
+      <div class="grid grid-cols-[200px_1fr] gap-2 items-center text-xs opacity-70">
+        <span class="font-mono text-base-content/60 truncate" title="{{ path }}">{{ path }}</span>
+        <span class="font-mono line-through">{{ val if val is not none else "(null)" }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ─── Actions ─── #}
+  <div class="flex items-center justify-end gap-2 pt-3 border-t border-base-content/10">
+    <button type="button" class="btn btn-ghost btn-sm"
+            onclick="document.getElementById('reextract-modal').close()">
+      Keep original
+    </button>
+    {% if diff.n_added or diff.n_changed or diff.n_removed %}
+    <form hx-post="/logistics/documents/{{ doc_id }}/reextract/accept"
+          hx-target="#reextract-result"
+          hx-swap="innerHTML"
+          hx-on::after-request="setTimeout(() => location.reload(), 1200)"
+          class="inline">
+      <input type="hidden" name="new_json" value="{{ new_json }}">
+      <button type="submit" class="btn btn-primary btn-sm">✓ Accept changes</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div id="reextract-result" class="min-h-[2rem]"></div>
+</div>
+
+{% endif %}

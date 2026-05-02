@@ -1,0 +1,14 @@
+{# Returned by maintenance actions on the settings page. #}
+
+{% if ok %}
+<div class="alert alert-success shadow-md mb-4">
+  <span class="text-lg">✓</span>
+  <span>{{ msg }}</span>
+  <a href="/logistics/settings" class="btn btn-ghost btn-xs ml-auto">Refresh</a>
+</div>
+{% else %}
+<div class="alert alert-error shadow-md mb-4">
+  <span class="text-lg">✕</span>
+  <span>{{ msg }}</span>
+</div>
+{% endif %}

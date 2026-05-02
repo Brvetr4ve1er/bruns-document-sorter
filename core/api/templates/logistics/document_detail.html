@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}Logistics — Document {{ d.id }}{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">Logistics document</div>
+      <h1 class="text-2xl font-black tracking-tight font-mono break-all">
+        {{ extracted.tan_number or basename or ("doc " ~ d.id) }}
+      </h1>
+      <div class="text-sm text-base-content/60 mt-1 flex items-center flex-wrap gap-2">
+        <span class="badge badge-outline badge-sm">{{ d.type or extracted.document_type or "UNKNOWN" }}</span>
+        {% if tier %}
+          <span class="badge {{ tier.css_class }} badge-sm">
+            {{ tier.label }}
+          </span>
+        {% endif %}
+        {% if d.reviewed_at %}
+          <span class="badge badge-info badge-outline badge-sm">✓ reviewed {{ d.reviewed_at[:10] }}</span>
+        {% endif %}
+        {% if extracted.carrier %}<span>·</span><span>{{ extracted.carrier }}</span>{% endif %}
+        {% if extracted.vessel_name %}<span>·</span><span class="font-mono">{{ extracted.vessel_name }}</span>{% endif %}
+        {% if extracted.containers %}<span>·</span><span>{{ extracted.containers|length }} container(s)</span>{% endif %}
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <a href="/logistics/documents" class="btn btn-ghost btn-sm">← All docs</a>
+      <a href="/logistics" class="btn btn-ghost btn-sm">Dashboard</a>
+    </div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-4">
+
+  {# ── LEFT: annotated document (P2-A: bounding box visualization) ── #}
+  <div class="glass rounded-2xl p-3 lg:sticky lg:top-20 self-start" id="doc-preview-panel">
+    <div class="flex items-center justify-between mb-2 px-2 flex-wrap gap-2">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60">
+        📄 Document <span id="active-field-label" class="text-primary font-normal"></span>
+      </h2>
+      <div class="flex items-center gap-2">
+        {% if d.source_file %}
+        <div class="flex items-center gap-1">
+          <button class="btn btn-xs btn-ghost" id="prev-page" onclick="changePage(-1)">◀</button>
+          <span id="page-indicator" class="text-xs text-base-content/50 w-16 text-center">page 1</span>
+          <button class="btn btn-xs btn-ghost" id="next-page" onclick="changePage(1)">▶</button>
+        </div>
+        <button class="btn btn-xs btn-ghost" id="toggle-highlights"
+                onclick="toggleHighlights()" title="Toggle field highlights">
+          🎨 Highlights
+        </button>
+        {% endif %}
+        <a href="/files/logistics/{{ d.id }}" target="_blank"
+           class="btn btn-ghost btn-xs" download="{{ basename }}">⬇</a>
+      </div>
+    </div>
+
+    {% if not d.source_file %}
+      <div class="text-center py-12 text-base-content/40 text-sm">
+        📭 No source file for this document.
+      </div>
+    {% elif ext in (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff") %}
+      {# Annotated image — shows bounding box highlights for extracted fields #}
+      <div class="relative">
+        <img id="annotated-page"
+             src="/files/logistics/{{ d.id }}/annotated?page=0"
+             alt="{{ basename }}"
+             class="w-full rounded-lg bg-base-300 object-contain cursor-crosshair"
+             style="max-height: calc(100vh - 220px); min-height: 400px;"
+             loading="lazy" />
+        <div id="page-loading"
+             class="hidden absolute inset-0 flex items-center justify-center bg-base-300/60 rounded-lg">
+          <span class="loading loading-spinner loading-md text-primary"></span>
+        </div>
+      </div>
+    {% else %}
+      <div class="text-center py-12 text-base-content/40 text-sm">
+        Preview not available for {{ ext or "this file type" }}.
+      </div>
+    {% endif %}
+    {% if basename %}
+    <div class="mt-2 text-xs text-base-content/40 text-center font-mono truncate">
+      {{ basename }}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── RIGHT: every extracted field, editable ── #}
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60">
+        ✎ Extracted fields ({{ flat_fields|length }})
+      </h2>
+      <div class="flex gap-2 flex-wrap">
+        <button type="button"
+                class="btn btn-warning btn-xs"
+                hx-post="/logistics/documents/{{ d.id }}/reextract"
+                hx-target="#reextract-modal-body"
+                hx-swap="innerHTML"
+                hx-indicator="#reextract-spinner"
+                onclick="document.getElementById('reextract-modal').showModal()">
+          🔄 Re-extract
+        </button>
+        <button id="copy-json-btn" type="button"
+                class="btn btn-ghost btn-xs"
+                onclick="copyExtractedJson()">📋 Copy JSON</button>
+        <button type="button" class="btn btn-ghost btn-xs"
+                onclick="toggleRawMode()">⌨ Raw JSON</button>
+        <button type="button" class="btn btn-ghost btn-xs"
+                onclick="document.getElementById('json-modal').showModal()">👁 View</button>
+      </div>
+    </div>
+
+    {# ─── Form mode (default): one input per leaf field ─── #}
+    <form id="fields-form"
+          hx-post="/logistics/documents/{{ d.id }}"
+          hx-target="#save-result"
+          hx-swap="innerHTML"
+          class="space-y-1">
+
+      <div class="space-y-1 max-h-[calc(100vh-280px)] overflow-y-auto pr-2">
+        {% set ns = namespace(prev_section="") %}
+        {% for path, val in flat_fields %}
+          {# Group by top-level path component to add visual section dividers #}
+          {% set top = path.split('.', 1)[0].split('[', 1)[0] %}
+          {% if top != ns.prev_section %}
+            {% set ns.prev_section = top %}
+            <div class="text-[10px] uppercase tracking-widest text-base-content/40 pt-3 pb-1 sticky top-0 bg-base-100/80 backdrop-blur z-10">
+              {{ top.replace('_', ' ') }}
+            </div>
+          {% endif %}
+          <label class="grid grid-cols-[180px_1fr] gap-2 items-center px-2 py-1
+                        rounded hover:bg-base-200/40 transition-colors">
+            <span class="text-xs font-mono text-base-content/60 truncate" title="{{ path }}">
+              {{ path }}
+            </span>
+            {% if val is sameas true or val is sameas false %}
+              <select name="f.{{ path }}" class="select select-bordered select-xs bg-base-200">
+                <option value="" {% if val is none %}selected{% endif %}>—</option>
+                <option value="true"  {% if val is sameas true  %}selected{% endif %}>true</option>
+                <option value="false" {% if val is sameas false %}selected{% endif %}>false</option>
+              </select>
+            {% elif val is number %}
+              <input name="f.{{ path }}" type="number" step="any" value="{{ val }}"
+                     class="input input-bordered input-xs bg-base-200" />
+            {% elif val is string and val|length > 80 %}
+              <textarea name="f.{{ path }}" rows="2"
+                        class="textarea textarea-bordered bg-base-200 text-xs">{{ val }}</textarea>
+            {% else %}
+              <input name="f.{{ path }}" type="text" value="{{ val if val is not none else '' }}"
+                     class="input input-bordered input-xs bg-base-200" />
+            {% endif %}
+          </label>
+        {% endfor %}
+      </div>
+
+      <div id="save-result" class="min-h-[2rem] mt-2"></div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-base-content/10">
+        <a href="/logistics/documents" class="btn btn-ghost btn-sm">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save changes</button>
+      </div>
+    </form>
+
+    {# ─── Raw JSON mode: edit the whole blob at once ─── #}
+    <form id="raw-form"
+          hx-post="/logistics/documents/{{ d.id }}"
+          hx-target="#save-result"
+          hx-swap="innerHTML"
+          class="hidden space-y-3">
+      <textarea name="raw_json" rows="20"
+                class="textarea textarea-bordered bg-base-300 font-mono text-xs w-full">{{ extracted_json }}</textarea>
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-base-content/10">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="toggleRawMode()">↩ Back to fields</button>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save raw JSON</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ─── P2-D: Cross-document reconciliation panel ─────────────────────── #}
+{% if reconciliation and reconciliation.siblings %}
+<div class="glass rounded-2xl p-4 md:p-5 mt-4
+            {% if reconciliation.has_issues %}border-l-4 border-warning{% else %}border-l-4 border-success{% endif %}">
+  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+    <div class="flex items-center gap-2">
+      <span class="text-sm font-bold">
+        {% if reconciliation.has_issues %}⚠ TAN cross-check{% else %}✓ TAN cross-check{% endif %}
+      </span>
+      <span class="badge {% if reconciliation.has_issues %}badge-warning{% else %}badge-success{% endif %} badge-sm">
+        {{ reconciliation.summary }}
+      </span>
+    </div>
+    <div class="flex gap-2 text-xs text-base-content/50">
+      {% for sib in reconciliation.siblings %}
+        <a href="/logistics/documents/{{ sib.id }}"
+           class="badge badge-ghost badge-sm hover:badge-primary">
+          {{ sib.type or "doc" }} #{{ sib.id }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if reconciliation.discrepancies %}
+  <div class="space-y-2">
+    {% for disc in reconciliation.discrepancies %}
+    <div class="rounded-lg p-3
+                {% if disc.severity == 'error' %}bg-error/10 border border-error/20{% else %}bg-warning/10 border border-warning/20{% endif %}">
+      <div class="flex items-start gap-3 flex-wrap">
+        <div class="min-w-[120px]">
+          <div class="text-xs font-bold
+                      {% if disc.severity == 'error' %}text-error{% else %}text-warning{% endif %}">
+            {{ disc.label }}
+          </div>
+          {% if disc.detail %}
+          <div class="text-[10px] text-base-content/50 mt-0.5">{{ disc.detail }}</div>
+          {% endif %}
+        </div>
+        <div class="flex flex-wrap gap-2 text-xs">
+          {% for doc_id_val, val in disc['values'].items() %}
+          <span class="font-mono bg-base-300 rounded px-2 py-0.5">
+            <span class="text-base-content/40">#{{ doc_id_val }}:</span> {{ val }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-xs text-base-content/50">
+    Vessel name, container numbers, ETD/ETA and gross weights all match across related documents.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ─── Read-only JSON view modal ───────────────────────────────────────── #}
+<dialog id="json-modal" class="modal">
+  <div class="modal-box max-w-4xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-bold text-lg">Extracted JSON</h3>
+      <div class="flex gap-2">
+        <button class="btn btn-xs" onclick="copyExtractedJson()">📋 Copy</button>
+        <form method="dialog"><button class="btn btn-xs btn-circle btn-ghost">✕</button></form>
+      </div>
+    </div>
+    <pre class="bg-base-300 rounded p-3 text-xs font-mono overflow-x-auto max-h-[70vh] overflow-y-auto">{{ extracted_json }}</pre>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+{# ─── P1-C: Re-extract diff modal ───────────────────────────────────── #}
+<dialog id="reextract-modal" class="modal">
+  <div class="modal-box max-w-4xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-bold text-lg">🔄 Re-extraction diff</h3>
+      <form method="dialog"><button class="btn btn-xs btn-circle btn-ghost">✕</button></form>
+    </div>
+    <p class="text-base-content/60 text-xs mb-3">
+      Comparing the stored extraction against a fresh run with the current prompt (v2.0).
+      Nothing is saved until you click <strong>Accept changes</strong>.
+    </p>
+    <div id="reextract-modal-body" class="min-h-[8rem]">
+      <div class="flex items-center gap-2 text-base-content/50 py-8 justify-center">
+        <span id="reextract-spinner" class="loading loading-spinner loading-md"></span>
+        <span class="text-sm">Running extraction (10–30 seconds)…</span>
+      </div>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script id="extracted-json-data" type="application/json">{{ extracted_json | safe }}</script>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function copyExtractedJson() {
+    const txt = document.getElementById('extracted-json-data').textContent;
+    navigator.clipboard.writeText(txt).then(() => {
+      const btn = document.getElementById('copy-json-btn');
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied';
+      btn.classList.add('btn-success');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('btn-success'); }, 1500);
+    }).catch(err => alert('Copy failed: ' + err));
+  }
+  function toggleRawMode() {
+    document.getElementById('fields-form').classList.toggle('hidden');
+    document.getElementById('raw-form').classList.toggle('hidden');
+  }
+
+  // ── P2-A: Bounding box field highlighting ──────────────────────────────
+  const DOC_ID = {{ d.id }};
+  let currentPage = 0;
+  let highlightsOn = true;
+  let activeField = null;
+
+  function buildAnnotatedUrl(page, field) {
+    let url = `/files/logistics/${DOC_ID}/annotated?page=${page}`;
+    if (field && highlightsOn) url += `&field=${encodeURIComponent(field)}`;
+    else if (highlightsOn) url = `/files/logistics/${DOC_ID}/annotated?page=${page}`;
+    else url = `/files/logistics/${DOC_ID}`;  // raw when highlights off (only works for image)
+    return url;
+  }
+
+  function loadPage(page, field) {
+    const img = document.getElementById('annotated-page');
+    const loading = document.getElementById('page-loading');
+    const indicator = document.getElementById('page-indicator');
+    if (!img) return;
+    loading && loading.classList.remove('hidden');
+    img.style.opacity = '0.5';
+    const url = buildAnnotatedUrl(page, field);
+    const tmp = new Image();
+    tmp.onload = () => {
+      img.src = url;
+      img.style.opacity = '1';
+      loading && loading.classList.add('hidden');
+    };
+    tmp.onerror = () => {
+      img.style.opacity = '1';
+      loading && loading.classList.add('hidden');
+    };
+    tmp.src = url;
+    if (indicator) indicator.textContent = `page ${page + 1}`;
+  }
+
+  function changePage(delta) {
+    currentPage = Math.max(0, currentPage + delta);
+    loadPage(currentPage, activeField);
+  }
+
+  function toggleHighlights() {
+    highlightsOn = !highlightsOn;
+    const btn = document.getElementById('toggle-highlights');
+    if (btn) btn.classList.toggle('btn-active', highlightsOn);
+    loadPage(currentPage, highlightsOn ? activeField : null);
+  }
+
+  // Wire field labels: clicking any label highlights it in the PDF
+  document.addEventListener('DOMContentLoaded', () => {
+    const labels = document.querySelectorAll('#fields-form span.font-mono[title]');
+    labels.forEach(span => {
+      span.style.cursor = 'pointer';
+      span.title = span.title + ' — click to highlight in PDF';
+      span.addEventListener('click', () => {
+        const field = span.title.split(' — ')[0];
+        if (activeField === field) {
+          // Second click: deselect
+          activeField = null;
+          span.classList.remove('text-primary', 'font-bold');
+          document.getElementById('active-field-label').textContent = '';
+        } else {
+          document.querySelectorAll('#fields-form span.font-mono').forEach(s => {
+            s.classList.remove('text-primary', 'font-bold');
+          });
+          span.classList.add('text-primary', 'font-bold');
+          activeField = field;
+          document.getElementById('active-field-label').textContent = `· ${field}`;
+        }
+        loadPage(currentPage, activeField);
+      });
+    });
+  });
+</script>
+{% endblock %}

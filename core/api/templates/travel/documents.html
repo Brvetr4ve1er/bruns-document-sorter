@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Travel — Documents{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-secondary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">📄 Documents</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Every extracted identity document — passport, ID card, visa, certificate.
+      </p>
+    </div>
+    <a href="/travel" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+{% if not db_present %}
+<div class="alert alert-info shadow-md">
+  <span>ℹ️</span>
+  <span>No travel database yet.</span>
+  <a href="/travel/upload" class="btn btn-secondary btn-sm ml-auto">Upload →</a>
+</div>
+{% else %}
+
+<form class="glass rounded-xl p-3 mb-4 flex gap-2 flex-wrap" method="get">
+  <select name="type" class="select select-bordered select-sm bg-base-200">
+    <option value="" {% if not doc_type_filter %}selected{% endif %}>All types</option>
+    {% for t in ['PASSPORT','ID_CARD','VISA','BIRTH_CERT','MARRIAGE_CERT','BANK_STATEMENT','COMMERCIAL_REGISTRY','UNKNOWN'] %}
+      <option value="{{ t }}" {% if doc_type_filter == t %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+  {% if doc_type_filter %}<a href="/travel/documents" class="btn btn-ghost btn-sm">Clear</a>{% endif %}
+</form>
+
+<div class="glass rounded-2xl p-4 md:p-6">
+  {% if documents %}
+  <div class="overflow-x-auto">
+    <table class="table table-sm table-zebra">
+      <thead>
+        <tr class="text-base-content/60 uppercase text-xs">
+          <th>Type</th>
+          <th>Doc #</th>
+          <th>Person</th>
+          <th>Nationality</th>
+          <th>Family</th>
+          <th>Expires</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in documents %}
+        <tr class="hover cursor-pointer"
+            onclick="window.location.href='/travel/documents/{{ d.id }}'">
+          <td>
+            <span class="badge badge-outline badge-sm">{{ d.doc_type or "UNKNOWN" }}</span>
+          </td>
+          <td class="font-mono text-xs">
+            <a href="/travel/documents/{{ d.id }}" class="link link-hover link-secondary">
+              {{ d.doc_number or "—" }}
+            </a>
+          </td>
+          <td class="font-bold">{{ d.full_name or "—" }}</td>
+          <td>{{ d.nationality or "—" }}</td>
+          <td>
+            {% if d.family_name %}<span class="badge badge-secondary badge-outline badge-sm">👪 {{ d.family_name }}</span>
+            {% else %}<span class="text-base-content/40 text-xs">—</span>{% endif %}
+          </td>
+          <td class="text-xs font-mono
+                     {% if d.expiry_date and d.expiry_date < '2026-04-29' %}text-warning{% endif %}">
+            {{ d.expiry_date or "—" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="text-xs text-base-content/40 mt-3">
+    Showing {{ documents|length }} document{{ "s" if documents|length != 1 else "" }} (max 300).
+  </div>
+  {% else %}
+  <div class="text-center py-12 text-base-content/50">
+    <div class="text-4xl mb-2">📄</div>
+    <div>{% if doc_type_filter %}No documents of type "<span class="font-mono">{{ doc_type_filter }}</span>"{% else %}No documents yet{% endif %}.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}

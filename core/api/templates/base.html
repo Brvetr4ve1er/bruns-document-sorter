@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" data-theme="synthwave">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Document Intelligence{% endblock %}</title>
+
+  {# TD11: UI assets are now vendored locally for offline-capable deployments.
+     Port offices and customs warehouses with no internet still get the full
+     UI. Re-vendor with the recipe in docs/TECH-DEBT-CLEANUP.md (P7). #}
+  <script src="{{ url_for('static', filename='tailwind.min.js') }}"></script>
+  <link href="{{ url_for('static', filename='daisyui.min.css') }}" rel="stylesheet" />
+  <script src="{{ url_for('static', filename='htmx.min.js') }}"></script>
+
+  {# Inter font: stays on Google Fonts because typography downgrades to
+     system-ui via the CSS rule below if offline. No layout breakage. #}
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <style>
+    html, body { font-family: 'Inter', system-ui, sans-serif; }
+    /* Flat full-bleed when nav is hidden (splash) */
+    .min-h-screen-safe { min-height: 100dvh; }
+    /* Soft halo behind hero blocks — picks up theme accent automatically */
+    .halo {
+      background:
+        radial-gradient(ellipse 80% 40% at 50% 0%, hsl(var(--p) / 0.18), transparent 60%),
+        radial-gradient(ellipse 50% 35% at 90% 90%, hsl(var(--s) / 0.10), transparent 55%);
+    }
+    /* Glass card — works in any DaisyUI theme by inheriting --b1 */
+    .glass {
+      background: hsl(var(--b1) / 0.6);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      border: 1px solid hsl(var(--bc) / 0.08);
+    }
+    .glass-hover { transition: transform .2s, border-color .2s, box-shadow .2s; }
+    .glass-hover:hover {
+      transform: translateY(-2px);
+      border-color: hsl(var(--bc) / 0.18);
+      box-shadow: 0 12px 32px hsl(var(--n) / 0.35);
+    }
+    /* P4-B: Print-to-PDF — hide nav/buttons, drop glass effects, force white bg */
+    @media print {
+      .print-hide, button, .btn, dialog, .htmx-indicator, .modal { display: none !important; }
+      body { background: white !important; color: black !important; }
+      .glass {
+        background: white !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        border: 1px solid #ddd !important;
+        page-break-inside: avoid;
+      }
+      .halo { background: none !important; }
+      a { color: black !important; text-decoration: none !important; }
+      .badge { border: 1px solid #999 !important; color: black !important; }
+      table { page-break-inside: auto; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      h1, h2, h3 { page-break-after: avoid; }
+      main { padding: 0 !important; }
+    }
+  </style>
+
+  <!-- Theme bootstrap: read from localStorage before paint to avoid flash -->
+  <script>
+    (function () {
+      const saved = localStorage.getItem('di_theme');
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+  </script>
+</head>
+
+<body class="min-h-screen-safe bg-base-100 text-base-content">
+
+  {% block topbar %}
+  <header class="navbar bg-base-200/60 backdrop-blur sticky top-0 z-40 border-b border-base-content/10 print-hide">
+    <div class="flex-1 px-4 gap-3 items-center">
+      <a href="/" class="btn btn-ghost text-lg font-extrabold tracking-tight">
+        🧠 <span class="hidden sm:inline">Document Intelligence</span>
+      </a>
+      {% if mode %}
+        <div class="badge badge-primary badge-outline hidden md:inline-flex">
+          {% if mode == 'logistics' %}🚢 Logistics{% else %}✈️ Travel{% endif %}
+        </div>
+      {% endif %}
+      {# P4-A: Global search — keyword "/" opens it #}
+      <form action="/search" method="get" class="relative max-w-sm flex-1 hidden md:flex">
+        <input id="global-search" name="q" type="search"
+               placeholder="🔍 Search… (press / )"
+               class="input input-bordered input-sm bg-base-100/60 w-full"
+               autocomplete="off" />
+        <input type="hidden" name="mode" value="{{ mode or '' }}" />
+      </form>
+    </div>
+
+    <div class="flex-none gap-2 px-2">
+
+      {% if mode == 'logistics' %}
+      <ul class="menu menu-horizontal px-1 hidden lg:flex">
+        <li><a href="/logistics">Dashboard</a></li>
+        <li><a href="/logistics/documents">Documents</a></li>
+        <li><a href="/logistics/swimlane">Pipeline</a></li>
+        <li><a href="/logistics/review">Review</a></li>
+        <li><a href="/logistics/upload">Upload</a></li>
+        <li><a href="/logistics/sheet">Sheet</a></li>
+        <li><a href="/logistics/analytics">Analytics</a></li>
+        <li><a href="/logistics/export">Export</a></li>
+        <li><a href="/logistics/settings">Settings</a></li>
+      </ul>
+      {% elif mode == 'travel' %}
+      <ul class="menu menu-horizontal px-1 hidden lg:flex">
+        <li><a href="/travel">Dashboard</a></li>
+        <li><a href="/travel/upload">Upload</a></li>
+        <li><a href="/travel/persons">Persons</a></li>
+        <li><a href="/travel/families">Families</a></li>
+        <li><a href="/travel/documents">Documents</a></li>
+        <li><a href="/travel/calendar">Calendar</a></li>
+        <li><a href="/travel/analytics">Analytics</a></li>
+      </ul>
+      {% endif %}
+
+      <!-- Theme picker -->
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1">
+          🎨 <span class="hidden md:inline">Theme</span>
+        </div>
+        <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-200 rounded-box w-56 max-h-[70vh] overflow-y-auto">
+          {% for t in [
+            "synthwave","dracula","cyberpunk","halloween","forest","aqua","night",
+            "coffee","dim","sunset","luxury","black","business",
+            "light","cupcake","bumblebee","emerald","corporate","retro","valentine",
+            "garden","lofi","pastel","fantasy","wireframe","cmyk","autumn",
+            "acid","lemonade","winter","nord"
+          ] %}
+            <li>
+              <button class="capitalize" onclick="setTheme('{{ t }}')">
+                <span class="inline-block w-3 h-3 rounded-full"
+                      style="background:linear-gradient(135deg,hsl(var(--p)),hsl(var(--s)))"></span>
+                {{ t }}
+              </button>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <!-- LLM config: load form into modal body on first open, then show -->
+      <button class="btn btn-ghost btn-sm"
+              hx-get="/llm/config"
+              hx-target="#llm_modal_body"
+              hx-swap="innerHTML"
+              onclick="document.getElementById('llm_modal').showModal()">
+        ⚙ <span class="hidden md:inline">LLM</span>
+      </button>
+
+      {% if mode %}
+      <a href="/" class="btn btn-ghost btn-sm" title="Switch mode">⇄</a>
+      {% endif %}
+    </div>
+  </header>
+  {% endblock %}
+
+  <main class="container mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- LLM modal — body loaded via HTMX from /llm/config on open -->
+  <dialog id="llm_modal" class="modal">
+    <div class="modal-box max-w-2xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-bold text-lg">⚙ LLM Connection</h3>
+        <form method="dialog">
+          <button class="btn btn-sm btn-circle btn-ghost">✕</button>
+        </form>
+      </div>
+      <p class="text-base-content/60 text-xs mb-4">
+        Configure the language-model backend used for extraction.
+        Settings persist to <code class="text-primary">data/.llm_config.json</code>.
+      </p>
+      <div id="llm_modal_body">
+        <div class="flex items-center gap-2 text-base-content/50 py-8 justify-center">
+          <span class="loading loading-spinner loading-sm"></span>
+          <span class="text-sm">Loading config…</span>
+        </div>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <script>
+    function setTheme(name) {
+      document.documentElement.setAttribute('data-theme', name);
+      localStorage.setItem('di_theme', name);
+      // Close any open dropdowns
+      document.activeElement && document.activeElement.blur();
+    }
+
+    // ── P4-C: Keyboard shortcuts ──────────────────────────────────────────
+    (function () {
+      const MODE = '{{ mode or "" }}';
+      function isTyping(e) {
+        const t = e.target;
+        return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      }
+      const ROUTES = {
+        logistics: { U: '/logistics/upload', R: '/logistics/review', D: '/logistics',
+                     P: '/logistics/swimlane', A: '/logistics/analytics' },
+        travel:    { U: '/travel/upload', D: '/travel', C: '/travel/calendar',
+                     F: '/travel/families', A: '/travel/analytics' },
+      };
+      document.addEventListener('keydown', function (e) {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (isTyping(e) && e.key !== 'Escape') return;
+        if (e.key === '/') {
+          const s = document.getElementById('global-search');
+          if (s) { e.preventDefault(); s.focus(); s.select(); }
+          return;
+        }
+        if (e.key === '?') {
+          e.preventDefault();
+          document.getElementById('shortcuts_modal').showModal();
+          return;
+        }
+        if (e.key === 'Escape') {
+          document.querySelectorAll('dialog[open]').forEach(d => d.close());
+          if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+          return;
+        }
+        const k = e.key.toUpperCase();
+        const map = ROUTES[MODE] || {};
+        if (map[k]) { e.preventDefault(); window.location.href = map[k]; }
+      });
+    })();
+  </script>
+
+  {# P4-C: Shortcuts help overlay — opened with `?` #}
+  <dialog id="shortcuts_modal" class="modal">
+    <div class="modal-box max-w-md">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-lg">⌨ Keyboard shortcuts</h3>
+        <form method="dialog"><button class="btn btn-xs btn-circle btn-ghost">✕</button></form>
+      </div>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">/</kbd></span><span class="text-base-content/60">Focus global search</span></div>
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">?</kbd></span><span class="text-base-content/60">This help overlay</span></div>
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">Esc</kbd></span><span class="text-base-content/60">Close modal / unfocus</span></div>
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">D</kbd></span><span class="text-base-content/60">Dashboard</span></div>
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">U</kbd></span><span class="text-base-content/60">Upload</span></div>
+        {% if mode == 'logistics' %}
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">R</kbd></span><span class="text-base-content/60">Review queue</span></div>
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">P</kbd></span><span class="text-base-content/60">Pipeline</span></div>
+        {% elif mode == 'travel' %}
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">C</kbd></span><span class="text-base-content/60">Calendar</span></div>
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">F</kbd></span><span class="text-base-content/60">Families</span></div>
+        {% endif %}
+        <div class="flex justify-between"><span><kbd class="kbd kbd-sm">A</kbd></span><span class="text-base-content/60">Analytics</span></div>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

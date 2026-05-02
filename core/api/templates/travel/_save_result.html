@@ -1,0 +1,13 @@
+{# Returned by inline-edit POST handlers. Swapped into #save-result.
+   Auto-fades after a short delay so the form looks clean again. #}
+
+{% if ok %}
+<div class="alert alert-success shadow-sm py-2 text-sm"
+     _="on load wait 2.5s then transition opacity to 0 over 0.4s">
+  <span>✓</span><span>{{ msg }}</span>
+</div>
+{% else %}
+<div class="alert alert-error shadow-sm py-2 text-sm">
+  <span>✕</span><span>{{ msg }}</span>
+</div>
+{% endif %}

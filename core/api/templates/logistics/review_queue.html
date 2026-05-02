@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Logistics — Review Queue{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-warning halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">🔍 Review Queue</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Documents below 0.90 confidence that haven't been operator-reviewed.
+        Industry standard: clear this queue daily, target 10–15% escalation rate.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="/logistics/review{% if show_all %}{% else %}?all=1{% endif %}"
+         class="btn btn-ghost btn-sm">
+        {% if show_all %}Hide reviewed{% else %}Show all{% endif %}
+      </a>
+      <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+    </div>
+  </div>
+</div>
+
+{% if not db_present %}
+<div class="alert alert-info">No logistics database yet.</div>
+{% elif not docs %}
+<div class="glass rounded-2xl p-12 text-center text-base-content/50">
+  <div class="text-4xl mb-3">✓</div>
+  <div class="font-semibold mb-1">Queue clear</div>
+  <div class="text-xs">All logistics documents are auto-approved or already reviewed.</div>
+</div>
+{% else %}
+
+<div class="glass rounded-2xl p-3">
+  <div class="overflow-x-auto">
+    <table class="table table-sm table-zebra">
+      <thead>
+        <tr class="text-base-content/60 uppercase text-xs">
+          <th>Tier</th>
+          <th>Type</th>
+          <th>TAN</th>
+          <th>Carrier</th>
+          <th>Vessel</th>
+          <th>Source</th>
+          <th>Reviewed</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in docs %}
+        <tr class="hover">
+          <td>
+            <span class="badge {{ d.tier.css_class }} badge-sm whitespace-nowrap">
+              {{ d.tier.label }}
+            </span>
+          </td>
+          <td>
+            <span class="badge badge-outline badge-sm">{{ d.type or "—" }}</span>
+          </td>
+          <td class="font-mono text-xs">
+            <a href="/logistics/documents/{{ d.id }}"
+               class="link link-hover link-warning font-bold">
+              {{ d.tan or "—" }}
+            </a>
+          </td>
+          <td>{{ d.carrier or "—" }}</td>
+          <td class="text-xs">{{ d.vessel or "—" }}</td>
+          <td class="text-xs text-base-content/50 truncate max-w-[200px]">
+            {{ d.basename or "—" }}
+          </td>
+          <td class="text-xs text-base-content/50">
+            {{ d.reviewed_at or "—" }}
+          </td>
+          <td class="text-right">
+            <div class="flex gap-1 justify-end">
+              <a href="/logistics/documents/{{ d.id }}"
+                 class="btn btn-ghost btn-xs">Review →</a>
+              {% if not d.reviewed_at %}
+              <button class="btn btn-success btn-xs"
+                      hx-post="/logistics/review/{{ d.id }}/approve"
+                      hx-target="closest tr"
+                      hx-swap="outerHTML"
+                      hx-on::after-request="setTimeout(() => location.reload(), 800)">
+                ✓ Approve
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="text-xs text-base-content/40 mt-3 px-2">
+    {{ docs|length }} document{{ "s" if docs|length != 1 else "" }} in queue.
+    Sorted by confidence ascending — lowest scores first.
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

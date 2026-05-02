@@ -1,0 +1,51 @@
+{# P2-B: Returned by POST /logistics/ask. HTMX target=#ask-result #}
+
+{% if error %}
+<div class="alert alert-error shadow-sm py-2 text-sm mt-3">
+  <span>✕</span><span>{{ error }}</span>
+</div>
+{% else %}
+
+<div class="mt-3 space-y-3">
+  {# Results table #}
+  {% if rows %}
+  <div class="overflow-x-auto rounded-lg">
+    <table class="table table-xs table-zebra w-full">
+      <thead>
+        <tr>
+          {% for col in cols %}
+          <th class="text-xs uppercase text-base-content/60">{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="hover">
+          {% for cell in row %}
+          <td class="text-xs whitespace-nowrap">{{ cell if cell is not none else "—" }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="text-xs text-base-content/40">
+    {{ rows|length }} row{{ "s" if rows|length != 1 else "" }}
+    {% if rows|length == 50 %} (limited to 50){% endif %}
+  </div>
+  {% else %}
+  <div class="text-sm text-base-content/50 py-3 text-center">
+    No results returned.
+  </div>
+  {% endif %}
+
+  {# Show the SQL for transparency #}
+  <details class="text-xs">
+    <summary class="cursor-pointer text-base-content/40 hover:text-base-content/70">
+      View SQL query
+    </summary>
+    <pre class="mt-1 bg-base-300 rounded p-2 text-xs font-mono overflow-x-auto">{{ sql }}</pre>
+  </details>
+</div>
+
+{% endif %}

@@ -1,0 +1,146 @@
+{# LLM config form. Loaded into #llm_modal_body via HTMX.
+   Test/Save submit back to the same target so this fragment re-renders
+   with updated state (status banner, model list). #}
+
+<form id="llm-form"
+      class="space-y-4"
+      hx-target="#llm_modal_body"
+      hx-swap="innerHTML">
+
+  {# ─── Status banner (after Test or Save) ───────────────────────────── #}
+  {% if status %}
+    {% if status.ok %}
+      <div class="alert alert-success py-2 text-sm">
+        <span>✓</span> <span>{{ status.msg }}</span>
+      </div>
+    {% else %}
+      <div class="alert alert-error py-2 text-sm">
+        <span>✕</span> <span>{{ status.msg }}</span>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {# ─── Provider ──────────────────────────────────────────────────────── #}
+  <label class="form-control">
+    <span class="label-text text-xs uppercase tracking-wider mb-1">Provider</span>
+    <select name="provider" class="select select-bordered select-sm bg-base-200">
+      {% for key, p in providers.items() %}
+        <option value="{{ key }}"
+                data-base="{{ p.default_base }}"
+                data-port="{{ p.default_port }}"
+                {% if cfg.provider == key %}selected{% endif %}>
+          {{ p.icon }} {{ p.label }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+
+  {# ─── URL + Port ────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-3 gap-2">
+    <label class="form-control col-span-2">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">Base URL</span>
+      <input name="base_url" type="text" value="{{ cfg.base_url }}"
+             placeholder="http://localhost"
+             class="input input-bordered input-sm bg-base-200" />
+    </label>
+    <label class="form-control">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">Port</span>
+      <input name="port" type="number" min="1" max="65535"
+             value="{{ cfg.port }}"
+             class="input input-bordered input-sm bg-base-200" />
+    </label>
+  </div>
+
+  {# ─── API key (cloud only) ─────────────────────────────────────────── #}
+  {% set provider_key = cfg.provider %}
+  {% set requires_key = providers[provider_key].auth_header %}
+  {% if requires_key %}
+  <label class="form-control">
+    <span class="label-text text-xs uppercase tracking-wider mb-1">
+      API Key &nbsp;<span class="text-base-content/40">({{ requires_key }})</span>
+    </span>
+    <input name="api_key" type="password"
+           value="{{ cfg.api_key }}"
+           placeholder="sk-..."
+           class="input input-bordered input-sm bg-base-200 font-mono" />
+  </label>
+  {% else %}
+  <input type="hidden" name="api_key" value="{{ cfg.api_key }}" />
+  {% endif %}
+
+  {# ─── Model — dropdown if discovered, text otherwise ────────────────── #}
+  <label class="form-control">
+    <span class="label-text text-xs uppercase tracking-wider mb-1">Model</span>
+    {% if models %}
+      <select name="model" class="select select-bordered select-sm bg-base-200">
+        {% for m in models %}
+          <option value="{{ m }}" {% if cfg.model == m %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    {% else %}
+      <input name="model" type="text"
+             value="{{ cfg.model }}"
+             placeholder="e.g. llama3, qwen2.5, gpt-4o-mini"
+             class="input input-bordered input-sm bg-base-200 font-mono" />
+      <span class="text-xs text-base-content/40 mt-1">
+        Click <strong>Test Connection</strong> to auto-discover models.
+      </span>
+    {% endif %}
+  </label>
+
+  {# ─── Tuning ────────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 gap-3">
+    <label class="form-control">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">
+        Temperature: <span class="text-primary">{{ cfg.temperature }}</span>
+      </span>
+      <input name="temperature" type="range"
+             min="0" max="1" step="0.05"
+             value="{{ cfg.temperature }}"
+             class="range range-primary range-xs"
+             oninput="this.previousElementSibling.querySelector('.text-primary').textContent = this.value" />
+    </label>
+    <label class="form-control">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">Timeout (s)</span>
+      <input name="timeout" type="number" min="5" max="600" step="5"
+             value="{{ cfg.timeout }}"
+             class="input input-bordered input-sm bg-base-200" />
+    </label>
+  </div>
+
+  {# ─── Actions ──────────────────────────────────────────────────────── #}
+  <div class="flex items-center justify-end gap-2 pt-2 border-t border-base-content/10">
+    <button type="button"
+            class="btn btn-sm btn-ghost"
+            hx-post="/llm/test"
+            hx-include="#llm-form"
+            hx-indicator="#llm-spinner">
+      🔌 Test Connection
+    </button>
+
+    <button type="submit"
+            class="btn btn-sm btn-primary"
+            hx-post="/llm/save"
+            hx-include="#llm-form"
+            hx-indicator="#llm-spinner">
+      💾 Save
+    </button>
+
+    <span id="llm-spinner" class="htmx-indicator loading loading-spinner loading-sm"></span>
+  </div>
+</form>
+
+<script>
+  // Reset URL+Port to provider defaults when provider changes
+  (function () {
+    const sel = document.querySelector('#llm-form select[name="provider"]');
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+      const opt = sel.options[sel.selectedIndex];
+      const baseInput = document.querySelector('#llm-form input[name="base_url"]');
+      const portInput = document.querySelector('#llm-form input[name="port"]');
+      if (baseInput && opt.dataset.base) baseInput.value = opt.dataset.base;
+      if (portInput && opt.dataset.port) portInput.value = opt.dataset.port;
+    });
+  })();
+</script>

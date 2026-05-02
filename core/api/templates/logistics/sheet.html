@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+{% block title %}Logistics — Sheet Viewer{% endblock %}
+
+{% block content %}
+
+{# ─── Hero ────────────────────────────────────────────────────────────── #}
+<div class="glass rounded-2xl p-5 md:p-6 mb-4 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">📊 Sheet Viewer</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Interactive table — sort, filter, toggle columns, reorder, then export with your config.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="/logistics/export" class="btn btn-ghost btn-sm">Classic export →</a>
+      <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+    </div>
+  </div>
+</div>
+
+{% if not db_present or not rows %}
+<div class="glass rounded-2xl p-12 text-center text-base-content/50">
+  <div class="text-4xl mb-3">📭</div>
+  No container data yet — upload some PDFs first.
+</div>
+{% else %}
+
+{# ─── Filter bar ─────────────────────────────────────────────────────── #}
+<form class="glass rounded-xl p-3 mb-4 grid md:grid-cols-4 gap-2" method="get">
+  <input name="status"  value="{{ filters.status or '' }}"  type="text"
+         placeholder="Status filter (e.g. IN_TRANSIT)"
+         class="input input-bordered input-sm bg-base-200" />
+  <input name="carrier" value="{{ filters.carrier or '' }}" type="text"
+         placeholder="Carrier (e.g. CMA CGM)"
+         class="input input-bordered input-sm bg-base-200" />
+  <input name="tan"     value="{{ filters.tan or '' }}"     type="text"
+         placeholder="TAN contains…"
+         class="input input-bordered input-sm bg-base-200 font-mono" />
+  <div class="flex gap-2">
+    <button type="submit"            class="btn btn-primary btn-sm flex-1">Apply</button>
+    {% if filters.status or filters.carrier or filters.tan %}
+    <a href="/logistics/sheet" class="btn btn-ghost btn-sm">Clear</a>
+    {% endif %}
+    <button type="button" class="btn btn-ghost btn-sm" onclick="shareThisView()" title="Copy URL with filters">
+      🔗
+    </button>
+  </div>
+</form>
+
+<script>
+  function shareThisView() {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = event.target;
+      const orig = btn.textContent;
+      btn.textContent = '✓';
+      btn.classList.add('btn-success');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('btn-success'); }, 1200);
+    }).catch(err => {
+      prompt('Copy this URL:', url);
+    });
+  }
+</script>
+
+{# ─── Layout: column panel | table ────────────────────────────────────── #}
+<div class="grid lg:grid-cols-[280px_1fr] gap-4">
+
+  {# ── LEFT: column customizer ── #}
+  <div class="glass rounded-2xl p-4 lg:sticky lg:top-20 self-start max-h-[calc(100vh-100px)] overflow-y-auto">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">
+      🎛 Columns
+    </h2>
+
+    <div class="flex flex-wrap gap-1 mb-3 pb-3 border-b border-base-content/10">
+      <button type="button" class="btn btn-ghost btn-xs" onclick="toggleAll(true)">All</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="toggleAll(false)">None</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="presetEssentials()">Essentials</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="resetOrder()">Reset order</button>
+    </div>
+
+    {# Column list — drag-handle + checkbox + label + arrows #}
+    <ul id="col-list" class="space-y-1">
+      {% for alias, label in columns %}
+      <li class="flex items-center gap-1 px-2 py-1 rounded hover:bg-base-200/40"
+          data-alias="{{ alias }}">
+        <input type="checkbox" checked
+               class="checkbox checkbox-primary checkbox-xs col-toggle"
+               data-alias="{{ alias }}"
+               data-essential="{{ alias in ['container_number','tan','compagnie_maritime','port','etd','eta','statut_container','size'] }}" />
+        <span class="text-xs flex-1 truncate" title="{{ label }}">{{ label }}</span>
+        <button type="button" class="btn btn-ghost btn-xs px-1" onclick="move(this,-1)" aria-label="Move up">▲</button>
+        <button type="button" class="btn btn-ghost btn-xs px-1" onclick="move(this, 1)" aria-label="Move down">▼</button>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="divider my-3"></div>
+
+    <div class="space-y-2">
+      <button type="button" id="export-csv-btn"
+              class="btn btn-secondary btn-sm w-full" onclick="downloadAs('csv')">
+        📄 Download CSV
+      </button>
+      <button type="button" id="export-xlsx-btn"
+              class="btn btn-primary btn-sm w-full" onclick="downloadAs('xlsx')">
+        📊 Download XLSX
+      </button>
+      <div class="text-xs text-base-content/40 text-center pt-1">
+        Exports use your current column order, visibility, and filters.
+      </div>
+    </div>
+  </div>
+
+  {# ── RIGHT: data table ── #}
+  <div class="glass rounded-2xl p-3 overflow-hidden">
+    <div class="flex items-center justify-between px-2 py-2">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60">
+        📋 Data ({{ rows|length }} rows)
+      </h2>
+      <div class="text-xs text-base-content/40">
+        Click any column header to sort · drag column visibility ← from the left panel
+      </div>
+    </div>
+
+    <div class="overflow-auto" style="max-height: calc(100vh - 200px);">
+      <table id="sheet-table" class="table table-xs table-zebra">
+        <thead class="sticky top-0 bg-base-200 z-10">
+          <tr id="sheet-thead-row"></tr>
+        </thead>
+        <tbody id="sheet-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{# ─── Data + columns passed to JS ────────────────────────────────────── #}
+<script id="sheet-data" type="application/json">{{ {
+    "labels":  labels,
+    "rows":    rows,
+    "filters": filters,
+} | tojson | safe }}</script>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const dataEl = document.getElementById('sheet-data');
+  if (!dataEl) return;
+  const data = JSON.parse(dataEl.textContent);
+  const labels = data.labels;            // canonical column labels in DB order
+  const rows   = data.rows;              // rows[r][c] aligned with labels
+  const filters = data.filters || {};
+
+  // sort state
+  let sortIdx = -1;
+  let sortDir = 'asc';
+
+  function getOrderedAliases() {
+    return Array.from(document.querySelectorAll('#col-list li'))
+      .map(li => li.dataset.alias);
+  }
+  function getVisibleAliases() {
+    return Array.from(document.querySelectorAll('#col-list li'))
+      .filter(li => li.querySelector('.col-toggle').checked)
+      .map(li => li.dataset.alias);
+  }
+
+  // The DB rows are in EXPORT_COLUMNS order — same as labels.
+  // To render in user order, we map alias -> column index in `labels`.
+  // The server's `_export_query` returned labels (display strings) aligned
+  // with EXPORT_COLUMNS row data; we need an alias->labelIdx map.
+  const aliasToIdx = (() => {
+    const m = {};
+    Array.from(document.querySelectorAll('#col-list li')).forEach((li, i) => {
+      m[li.dataset.alias] = i;
+    });
+    return m;
+  })();
+
+  function aliasToLabel(alias) {
+    const li = document.querySelector(`#col-list li[data-alias="${alias}"]`);
+    return li ? li.querySelector('span').textContent : alias;
+  }
+
+  function render() {
+    const orderedAliases = getOrderedAliases().filter(a =>
+      document.querySelector(`#col-list li[data-alias="${a}"] .col-toggle`).checked
+    );
+    const colIdxs = orderedAliases.map(a => aliasToIdx[a]);
+
+    // Header row
+    const thead = document.getElementById('sheet-thead-row');
+    thead.innerHTML = '';
+    orderedAliases.forEach((alias, i) => {
+      const th = document.createElement('th');
+      th.className = 'cursor-pointer hover:bg-base-300 select-none whitespace-nowrap';
+      th.style.userSelect = 'none';
+      const isSorted = (sortIdx === colIdxs[i]);
+      th.innerHTML = `${aliasToLabel(alias)} ${
+        isSorted ? (sortDir === 'asc' ? '▲' : '▼') : '<span class="opacity-30">⇅</span>'
+      }`;
+      th.onclick = () => {
+        if (sortIdx === colIdxs[i]) {
+          sortDir = (sortDir === 'asc' ? 'desc' : 'asc');
+        } else {
+          sortIdx = colIdxs[i];
+          sortDir = 'asc';
+        }
+        render();
+      };
+      thead.appendChild(th);
+    });
+
+    // Rows
+    let displayRows = [...rows];
+    if (sortIdx >= 0) {
+      displayRows.sort((a, b) => {
+        const va = a[sortIdx], vb = b[sortIdx];
+        // null/undefined -> end
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        // try numeric
+        const na = Number(va), nb = Number(vb);
+        if (!isNaN(na) && !isNaN(nb)) {
+          return (sortDir === 'asc' ? na - nb : nb - na);
+        }
+        // string compare
+        return (sortDir === 'asc'
+          ? String(va).localeCompare(String(vb))
+          : String(vb).localeCompare(String(va)));
+      });
+    }
+
+    const tbody = document.getElementById('sheet-tbody');
+    tbody.innerHTML = '';
+    displayRows.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.className = 'hover';
+      colIdxs.forEach(ci => {
+        const td = document.createElement('td');
+        const v = row[ci];
+        td.className = 'whitespace-nowrap text-xs';
+        td.textContent = (v == null || v === '') ? '—' : v;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ── Wire control buttons ──
+  document.querySelectorAll('.col-toggle').forEach(cb =>
+    cb.addEventListener('change', render));
+
+  window.toggleAll = function (state) {
+    document.querySelectorAll('.col-toggle').forEach(cb => cb.checked = state);
+    render();
+  };
+  window.presetEssentials = function () {
+    document.querySelectorAll('.col-toggle').forEach(cb => {
+      cb.checked = (cb.dataset.essential === 'True');
+    });
+    render();
+  };
+  window.resetOrder = function () {
+    const list = document.getElementById('col-list');
+    const items = Array.from(list.children);
+    // Original order = canonical aliases as rendered initially
+    items.sort((a, b) =>
+      a.dataset.originalIdx - b.dataset.originalIdx
+    );
+    items.forEach(i => list.appendChild(i));
+    render();
+  };
+  // Capture original index for the reset
+  document.querySelectorAll('#col-list li').forEach((li, i) => li.dataset.originalIdx = i);
+
+  window.move = function (btn, delta) {
+    const li = btn.closest('li');
+    const list = li.parentElement;
+    const sibling = (delta < 0) ? li.previousElementSibling : li.nextElementSibling;
+    if (!sibling) return;
+    if (delta < 0) list.insertBefore(li, sibling);
+    else           list.insertBefore(sibling, li);
+    render();
+  };
+
+  window.downloadAs = function (format) {
+    const cols = getVisibleAliases();
+    if (!cols.length) { alert('Pick at least one column.'); return; }
+    const params = new URLSearchParams();
+    params.set('cols', cols.join(','));
+    if (filters.status)  params.set('status',  filters.status);
+    if (filters.carrier) params.set('carrier', filters.carrier);
+    if (filters.tan)     params.set('tan',     filters.tan);
+    window.location.href = `/logistics/export.${format}?${params.toString()}`;
+  };
+
+  // First render
+  render();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Logistics — Documents{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">📄 Documents</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Every uploaded shipping document — booking confirmations, departure notices, bills of lading.
+        Click a row to view the original PDF side-by-side with all extracted fields.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+      <a href="/logistics/upload" class="btn btn-primary btn-sm">→ Upload</a>
+    </div>
+  </div>
+</div>
+
+{% if not db_present %}
+<div class="alert alert-info shadow-md">
+  <span>ℹ️</span>
+  <span>No logistics database yet — upload a PDF to get started.</span>
+</div>
+{% else %}
+
+<form class="glass rounded-xl p-3 mb-4 flex gap-2 flex-wrap items-center" method="get">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="🔍 Filter by TAN/type/filename, or describe what you want…"
+         class="input input-bordered input-sm bg-base-200 flex-1 font-mono" />
+  <label class="cursor-pointer flex items-center gap-1 text-xs">
+    <input type="checkbox" name="semantic" value="1" class="checkbox checkbox-xs checkbox-primary"
+           {% if semantic %}checked{% endif %} />
+    <span title="Use ChromaDB embeddings to find similar documents by meaning, not exact match">🧠 Semantic</span>
+  </label>
+  <button type="submit" class="btn btn-primary btn-sm">Search</button>
+  {% if q %}<a href="/logistics/documents" class="btn btn-ghost btn-sm">Clear</a>{% endif %}
+  <button type="button" class="btn btn-ghost btn-sm" onclick="shareThisView()" title="Copy URL with filters">🔗</button>
+</form>
+
+{% if semantic and q %}
+<div class="text-xs text-base-content/60 mb-3 px-1">
+  {% if semantic_used %}
+    🧠 Showing top {{ docs|length }} semantically similar to <span class="font-mono text-primary">{{ q }}</span>
+    — ranked by ChromaDB cosine similarity.
+  {% else %}
+    ⚠️ Semantic index not ready (no embeddings yet) — fell back to keyword match.
+  {% endif %}
+</div>
+{% endif %}
+
+<script>
+  function shareThisView() {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = event.target;
+      const orig = btn.textContent;
+      btn.textContent = '✓';
+      btn.classList.add('btn-success');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('btn-success'); }, 1200);
+    }).catch(err => prompt('Copy this URL:', url));
+  }
+</script>
+
+<div class="glass rounded-2xl p-4 md:p-6">
+  {% if docs %}
+  <div class="overflow-x-auto">
+    <table class="table table-sm table-zebra">
+      <thead>
+        <tr class="text-base-content/60 uppercase text-xs">
+          <th>Type</th>
+          <th>TAN</th>
+          <th>Carrier</th>
+          <th>Vessel</th>
+          <th>ETD</th>
+          <th>ETA</th>
+          <th class="text-right">#Containers</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in docs %}
+        <tr class="hover cursor-pointer"
+            onclick="window.location.href='/logistics/documents/{{ d.id }}'">
+          <td>
+            <span class="badge badge-outline badge-sm">{{ d.type or "UNKNOWN" }}</span>
+          </td>
+          <td class="font-mono text-xs font-bold">
+            <a href="/logistics/documents/{{ d.id }}" class="link link-hover link-primary">
+              {{ d.tan or "—" }}
+            </a>
+          </td>
+          <td>{{ d.carrier or "—" }}</td>
+          <td class="text-xs">{{ d.vessel or "—" }}</td>
+          <td class="text-xs font-mono">{{ d.etd or "—" }}</td>
+          <td class="text-xs font-mono">{{ d.eta or "—" }}</td>
+          <td class="text-right">
+            <span class="badge badge-ghost badge-sm">{{ d.n_containers }}</span>
+          </td>
+          <td class="text-xs text-base-content/50 truncate max-w-[200px]">
+            {{ d.basename or "—" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="text-xs text-base-content/40 mt-3">
+    {{ docs|length }} document{{ "s" if docs|length != 1 else "" }} {% if q %}matching "<span class="font-mono">{{ q }}</span>"{% endif %} (max 500).
+  </div>
+  {% else %}
+  <div class="text-center py-12 text-base-content/50">
+    <div class="text-4xl mb-2">📭</div>
+    <div>{% if q %}No matches for "<span class="font-mono">{{ q }}</span>"{% else %}No documents yet{% endif %}.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}

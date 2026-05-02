@@ -37,15 +37,17 @@ python/
 *.dylib
 
 # Tesseract / OCR related noise
-*.html
 tessdata/
 !tessdata/*.traineddata # Maybe keep traineddata? Actually usually excluded if large
 models/
 *.traineddata
 
 # Data and Logs
-data/
-db/
+/data/
+/db/
+tests/data/export_*/
+tests/data/*.zip
+tests/data/*.db
 *.log
 *.sqlite3
 *.csv

@@ -1,0 +1,7 @@
+{# Returned by POST /logistics/upload on input validation failure.
+   HTMX swaps it into #upload-result. #}
+
+<div class="alert alert-error shadow-md">
+  <span class="text-lg">✕</span>
+  <span>{{ error or "Upload failed" }}</span>
+</div>

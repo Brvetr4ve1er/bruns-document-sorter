@@ -1,0 +1,17 @@
+{# Returned by POST /logistics/edit/<id>. Swaps into #edit-result. #}
+
+{% if ok %}
+<div class="alert alert-success shadow-md mb-4">
+  <span class="text-lg">✓</span>
+  <span>{{ msg }}</span>
+  <div class="ml-auto flex gap-2">
+    <a href="/logistics" class="btn btn-ghost btn-xs">← Dashboard</a>
+    <a href="/logistics/edit/{{ container_id }}" class="btn btn-xs">Refresh</a>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-error shadow-md mb-4">
+  <span class="text-lg">✕</span>
+  <span>{{ msg }}</span>
+</div>
+{% endif %}

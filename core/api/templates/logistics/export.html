@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Logistics — Export{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">📊 Export</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Download the joined shipments + containers table as CSV (UTF-8 BOM, Excel-friendly)
+        or XLSX (auto-filter, frozen header, indigo theme).
+      </p>
+    </div>
+    <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+<form id="export-form" class="glass rounded-2xl p-5">
+
+  {# ─── Filters ────────────────────────────────────────────────────────── #}
+  <div class="grid md:grid-cols-3 gap-3 mb-4 pb-4 border-b border-base-content/10">
+    <label class="form-control">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">Status filter</span>
+      <input name="status" type="text" placeholder="e.g. IN_TRANSIT (optional)"
+             class="input input-bordered input-sm bg-base-200" />
+    </label>
+    <label class="form-control">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">Carrier filter</span>
+      <input name="carrier" type="text" placeholder="e.g. CMA CGM (optional)"
+             class="input input-bordered input-sm bg-base-200" />
+    </label>
+    <label class="form-control">
+      <span class="label-text text-xs uppercase tracking-wider mb-1">TAN contains</span>
+      <input name="tan" type="text" placeholder="e.g. 2026 (optional)"
+             class="input input-bordered input-sm bg-base-200 font-mono" />
+    </label>
+  </div>
+
+  {# ─── Column picker ─────────────────────────────────────────────────── #}
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="font-semibold text-sm">Columns to include</h3>
+    <div class="flex gap-2">
+      <button type="button" class="btn btn-ghost btn-xs" onclick="toggleAll(true)">Select all</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="toggleAll(false)">Clear</button>
+      <button type="button" class="btn btn-ghost btn-xs" onclick="presetEssentials()">Essentials only</button>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-3 gap-x-4 gap-y-2 max-h-[40vh] overflow-y-auto
+              pr-2 mb-5 border-l-2 border-base-content/10 pl-3">
+    {% for alias, label in columns %}
+      <label class="cursor-pointer flex items-center gap-2 hover:bg-base-200/40 px-2 py-1 rounded">
+        <input type="checkbox" name="col" value="{{ alias }}" checked
+               class="checkbox checkbox-primary checkbox-xs"
+               data-essential="{{ alias in ['container_number','tan','compagnie_maritime','port','etd','eta','statut_container','size'] }}" />
+        <span class="text-sm">{{ label }}</span>
+      </label>
+    {% endfor %}
+  </div>
+
+  {# ─── Action buttons ─────────────────────────────────────────────────── #}
+  <div class="flex items-center justify-end gap-3 pt-4 border-t border-base-content/10">
+    <button type="button" class="btn btn-ghost btn-sm" onclick="downloadAs('csv')">
+      📄 Download CSV
+    </button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="downloadAs('xlsx')">
+      📊 Download XLSX
+    </button>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function toggleAll(state) {
+    document.querySelectorAll('#export-form input[name="col"]').forEach(cb => cb.checked = state);
+  }
+  function presetEssentials() {
+    document.querySelectorAll('#export-form input[name="col"]').forEach(cb => {
+      cb.checked = (cb.dataset.essential === "True");
+    });
+  }
+  function downloadAs(format) {
+    const form = document.getElementById('export-form');
+    const cols = Array.from(form.querySelectorAll('input[name="col"]:checked')).map(cb => cb.value);
+    if (!cols.length) { alert('Pick at least one column.'); return; }
+    const params = new URLSearchParams();
+    params.set('cols', cols.join(','));
+    ['status','carrier','tan'].forEach(k => {
+      const v = form.elements[k].value.trim();
+      if (v) params.set(k, v);
+    });
+    window.location.href = `/logistics/export.${format}?${params.toString()}`;
+  }
+</script>
+{% endblock %}

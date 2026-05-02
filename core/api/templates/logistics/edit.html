@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Container — {{ c.container_number or c.id }}{% endblock %}
+
+{# ─── Field-render macro (must be defined before {% block content %}) ──── #}
+{% macro field(name, label, options=None) %}
+  {% set kind = fields[name] %}
+  {% set val  = c.get(name) if c.get(name) is not none else "" %}
+  <label class="form-control">
+    <span class="label-text text-xs uppercase tracking-wider mb-1">{{ label }}</span>
+    {% if options %}
+      <select name="{{ name }}" class="select select-bordered select-sm bg-base-200">
+        <option value="">—</option>
+        {% for opt in options %}
+          <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    {% elif kind == "textarea" %}
+      <textarea name="{{ name }}" rows="4"
+                class="textarea textarea-bordered bg-base-200 text-sm">{{ val }}</textarea>
+    {% elif kind == "date" %}
+      <input name="{{ name }}" type="date" value="{{ val }}"
+             class="input input-bordered input-sm bg-base-200" />
+    {% elif kind == "number" %}
+      <input name="{{ name }}" type="number" step="any" value="{{ val }}"
+             class="input input-bordered input-sm bg-base-200" />
+    {% else %}
+      <input name="{{ name }}" type="text" value="{{ val }}"
+             class="input input-bordered input-sm bg-base-200" />
+    {% endif %}
+  </label>
+{% endmacro %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">
+        Editing container
+      </div>
+      <h1 class="text-2xl font-black tracking-tight font-mono">
+        {{ c.container_number or "—" }}
+      </h1>
+      <div class="text-sm text-base-content/60 mt-1">
+        TAN <span class="font-mono text-primary">{{ c.tan or "—" }}</span>
+        · {{ c.compagnie_maritime or "—" }}
+        · {{ c.port or "—" }}
+      </div>
+    </div>
+    <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+<div id="edit-result"></div>
+
+<form id="edit-form"
+      class="glass rounded-2xl p-5"
+      hx-post="/logistics/edit/{{ c.id }}"
+      hx-target="#edit-result"
+      hx-swap="innerHTML"
+      hx-indicator="#edit-spinner">
+
+  <div role="tablist" class="tabs tabs-bordered mb-4">
+    <a role="tab" class="tab tab-active" onclick="showTab(this,'tab-status')">Status &amp; Delivery</a>
+    <a role="tab" class="tab" onclick="showTab(this,'tab-transport')">Transport</a>
+    <a role="tab" class="tab" onclick="showTab(this,'tab-billing')">Demurrage &amp; Billing</a>
+    <a role="tab" class="tab" onclick="showTab(this,'tab-douane')">Douane</a>
+    <a role="tab" class="tab" onclick="showTab(this,'tab-notes')">Notes</a>
+  </div>
+
+  <div id="tab-status" class="tab-panel grid md:grid-cols-2 gap-4">
+    {{ field("statut_container", "Container Status",
+        ["BOOKED","IN_TRANSIT","ARRIVED","DELIVERED","DELIVERED_FULL","CLOSED","UNKNOWN"]) }}
+    {{ field("date_livraison", "Delivery Date") }}
+    {{ field("site_livraison", "Delivery Site") }}
+    {{ field("livre_camion", "Delivery Truck") }}
+    {{ field("livre_chauffeur", "Delivery Driver") }}
+  </div>
+
+  <div id="tab-transport" class="tab-panel grid md:grid-cols-2 gap-4 hidden">
+    {{ field("container_number", "Container Number") }}
+    {{ field("size", "Size", ["20'","40'","40'HC","20' Reefer","40' Reefer","UNKNOWN"]) }}
+    {{ field("seal_number", "Seal Number") }}
+    {{ field("date_depotement", "Dépotement Date") }}
+    {{ field("date_restitution", "Restitution Date") }}
+    {{ field("restitue_camion", "Restitution Truck") }}
+    {{ field("restitue_chauffeur", "Restitution Driver") }}
+    {{ field("centre_restitution", "Restitution Center") }}
+  </div>
+
+  <div id="tab-billing" class="tab-panel grid md:grid-cols-2 gap-4 hidden">
+    {{ field("date_debut_surestarie", "Demurrage Start") }}
+    {{ field("date_restitution_estimative", "Estimated Restitution") }}
+    {{ field("nbr_jours_surestarie_estimes", "Estimated Demurrage Days") }}
+    {{ field("nbr_jour_surestarie_facture", "Invoiced Demurrage Days") }}
+    {{ field("montant_facture_check", "Invoice Amount (Check)") }}
+    {{ field("montant_facture_da", "Invoice Amount (DA)") }}
+    {{ field("taux_de_change", "Exchange Rate") }}
+    {{ field("n_facture_cm", "Carrier Invoice #") }}
+  </div>
+
+  <div id="tab-douane" class="tab-panel grid md:grid-cols-2 gap-4 hidden">
+    {{ field("date_declaration_douane", "Customs Declaration Date") }}
+    {{ field("date_liberation_douane", "Customs Release Date") }}
+    {{ field("nbr_jours_perdu_douane", "Days Lost in Customs") }}
+  </div>
+
+  <div id="tab-notes" class="tab-panel hidden">
+    {{ field("commentaire", "Comment") }}
+  </div>
+
+  <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-base-content/10">
+    <span id="edit-spinner" class="htmx-indicator loading loading-spinner loading-sm"></span>
+    <a href="/logistics" class="btn btn-ghost btn-sm">Cancel</a>
+    <button type="submit" class="btn btn-primary btn-sm">💾 Save Changes</button>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function showTab(tabEl, panelId) {
+    tabEl.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('tab-active'));
+    tabEl.classList.add('tab-active');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    document.getElementById(panelId).classList.remove('hidden');
+  }
+</script>
+{% endblock %}

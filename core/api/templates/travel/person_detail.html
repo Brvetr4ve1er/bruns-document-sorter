@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Travel — {{ person.full_name or "Person" }}{% endblock %}
+
+{% block content %}
+
+{# ─── Hero ────────────────────────────────────────────────────────────── #}
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-secondary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">Person</div>
+      <h1 class="text-2xl font-black tracking-tight">
+        👤 {{ person.full_name or "Unnamed" }}
+      </h1>
+      <div class="text-sm text-base-content/60 mt-1 flex items-center flex-wrap gap-2">
+        {% if person.dob %}<span class="font-mono">{{ person.dob }}</span><span>·</span>{% endif %}
+        {% if person.nationality %}<span>{{ person.nationality }}</span><span>·</span>{% endif %}
+        {% if person.gender %}<span>{{ person.gender }}</span><span>·</span>{% endif %}
+        <span>{{ docs|length }} document{{ "s" if docs|length != 1 else "" }}</span>
+        {% if person.family_name %}
+          <span>·</span>
+          <span class="badge badge-secondary badge-outline badge-sm">👪 {{ person.family_name }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <a href="/travel/persons" class="btn btn-ghost btn-sm">← All persons</a>
+    </div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-4">
+
+  {# ── LEFT: editable person card ── #}
+  <div class="glass rounded-2xl p-5 lg:sticky lg:top-20 self-start">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">
+      ✎ Person details
+    </h2>
+
+    <form id="person-form"
+          hx-post="/travel/persons/{{ person.id }}"
+          hx-target="#save-result"
+          hx-swap="innerHTML"
+          class="space-y-3">
+
+      <label class="form-control">
+        <span class="label-text text-xs uppercase tracking-wider mb-1">Full name</span>
+        <input name="full_name" type="text" value="{{ person.full_name or '' }}"
+               class="input input-bordered input-sm bg-base-200" />
+      </label>
+
+      <div class="grid grid-cols-2 gap-3">
+        <label class="form-control">
+          <span class="label-text text-xs uppercase tracking-wider mb-1">Date of birth</span>
+          <input name="dob" type="date" value="{{ person.dob or '' }}"
+                 class="input input-bordered input-sm bg-base-200" />
+        </label>
+        <label class="form-control">
+          <span class="label-text text-xs uppercase tracking-wider mb-1">Gender</span>
+          <select name="gender" class="select select-bordered select-sm bg-base-200">
+            <option value="" {% if not person.gender %}selected{% endif %}>—</option>
+            <option value="M" {% if person.gender == 'M' %}selected{% endif %}>M</option>
+            <option value="F" {% if person.gender == 'F' %}selected{% endif %}>F</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="form-control">
+        <span class="label-text text-xs uppercase tracking-wider mb-1">Nationality (ISO 3-letter)</span>
+        <input name="nationality" type="text" value="{{ person.nationality or '' }}"
+               maxlength="3" pattern="[A-Za-z]{3}"
+               class="input input-bordered input-sm bg-base-200 font-mono uppercase" />
+      </label>
+
+      <div id="save-result" class="min-h-[2rem]"></div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-base-content/10">
+        <a href="/travel/persons" class="btn btn-ghost btn-sm">Cancel</a>
+        <button type="submit" class="btn btn-secondary btn-sm">💾 Save</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── RIGHT: this person's documents ── #}
+  <div class="glass rounded-2xl p-5">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">
+      📄 Documents ({{ docs|length }})
+    </h2>
+
+    {% if not docs %}
+      <div class="text-center py-12 text-base-content/40 text-sm">
+        No documents linked to this person.
+      </div>
+    {% else %}
+    <div class="space-y-2">
+      {% for d in docs %}
+        <a href="/travel/documents/{{ d.id }}"
+           class="block bg-base-200/40 hover:bg-base-200/80 border border-base-content/5
+                  hover:border-secondary/40 rounded-lg px-4 py-3 transition-colors">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="badge badge-outline badge-sm">{{ d.doc_type or "UNKNOWN" }}</span>
+                <span class="font-mono text-xs">{{ d.doc_number or "—" }}</span>
+              </div>
+              <div class="text-xs text-base-content/50">
+                {% if d.expiry_date %}expires {{ d.expiry_date }}{% else %}no expiry{% endif %}
+              </div>
+            </div>
+            <span class="text-base-content/40">→</span>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="mt-4 pt-3 border-t border-base-content/10 text-xs text-base-content/40">
+      Click any document to view the original side-by-side with extracted fields.
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/hyperscript.org@0.9.13"></script>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Logistics — Pipeline{% endblock %}
+
+{% block content %}
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">⚡ Pipeline</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Container lifecycle at a glance. Click any card to view detail.
+        D&D risk shown in card border color.
+      </p>
+    </div>
+    <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+{% if not db_present %}
+<div class="alert alert-info shadow-md">No logistics database yet.</div>
+{% else %}
+
+<div class="overflow-x-auto pb-4">
+  <div class="flex gap-3 min-w-max items-start">
+    {% for stage in stages %}
+    {% set cards = columns.get(stage, []) %}
+    <div class="w-64 flex-shrink-0">
+
+      {# Stage header #}
+      <div class="mb-2 flex items-center justify-between px-1">
+        <span class="text-xs font-bold uppercase tracking-wider text-base-content/60">
+          {{ stage.replace("_", " ") }}
+        </span>
+        <span class="badge badge-ghost badge-xs">{{ cards|length }}</span>
+      </div>
+
+      {# Cards #}
+      <div class="space-y-2">
+        {% for card in cards %}
+        {% set dd = card.get('dd', {}) %}
+        {% set risk = dd.get('risk_level', 'none') %}
+        {% set border_color = {
+          'critical': 'border-error',
+          'high':     'border-error',
+          'medium':   'border-warning',
+          'low':      'border-info',
+          'none':     'border-base-content/10',
+        }.get(risk, 'border-base-content/10') %}
+
+        <a href="/logistics/containers/{{ card.id }}"
+           class="block glass glass-hover rounded-xl p-3 border-l-4 {{ border_color }}">
+          <div class="font-mono text-xs font-bold text-primary truncate mb-1">
+            {{ card.container_number or "—" }}
+          </div>
+          <div class="text-xs text-base-content/60 mb-1">
+            {{ card.tan or "—" }}
+          </div>
+          {% if card.compagnie_maritime %}
+          <div class="text-[10px] text-base-content/40">{{ card.compagnie_maritime }}</div>
+          {% endif %}
+          {% if card.eta %}
+          <div class="text-[10px] text-base-content/40 mt-1">ETA {{ card.eta }}</div>
+          {% endif %}
+          {% if dd.days_over_free and dd.days_over_free > 0 %}
+          <div class="text-[10px] text-{{ 'error' if risk in ('high','critical') else 'warning' }} mt-1 font-semibold">
+            {{ dd.days_over_free }}d over free
+            {% if dd.cost_usd %} · ${{ "%.0f"|format(dd.cost_usd) }}{% endif %}
+          </div>
+          {% elif dd.get('days_remaining') is not none and dd.get('days_remaining') <= 5 and dd.get('days_remaining') >= 0 %}
+          <div class="text-[10px] text-warning mt-1">
+            {{ dd.get('days_remaining') }}d free left
+          </div>
+          {% endif %}
+        </a>
+        {% endfor %}
+
+        {% if not cards %}
+        <div class="rounded-xl border border-dashed border-base-content/10 p-4 text-center
+                    text-base-content/30 text-xs">
+          empty
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# Legend #}
+<div class="flex flex-wrap gap-3 text-xs text-base-content/50 mt-2">
+  <span>Border color:</span>
+  <span><span class="inline-block w-3 h-3 rounded border-l-4 border-error mr-1"></span>D&D critical/high</span>
+  <span><span class="inline-block w-3 h-3 rounded border-l-4 border-warning mr-1"></span>D&D medium/low</span>
+  <span><span class="inline-block w-3 h-3 rounded border-l-4 border-base-content/10 mr-1"></span>No risk</span>
+</div>
+
+{% endif %}
+{% endblock %}

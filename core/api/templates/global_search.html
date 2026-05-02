@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-2">🔍 Search</h1>
+  <p class="text-base-content/70 text-sm">
+    Hybrid search across both modules — keyword matching plus semantic similarity for logistics.
+  </p>
+</div>
+
+<form action="/search" method="get" class="glass rounded-xl p-3 mb-4 flex gap-2 flex-wrap">
+  <input name="q" type="search" value="{{ q }}" autofocus
+         placeholder="Search containers, persons, families, doc numbers, TANs…"
+         class="input input-bordered input-sm bg-base-200 flex-1 font-mono" />
+  <select name="mode" class="select select-bordered select-sm bg-base-200">
+    <option value="" {% if not mode %}selected{% endif %}>both</option>
+    <option value="logistics" {% if mode == 'logistics' %}selected{% endif %}>logistics</option>
+    <option value="travel" {% if mode == 'travel' %}selected{% endif %}>travel</option>
+  </select>
+  <button type="submit" class="btn btn-primary btn-sm">Search</button>
+</form>
+
+{% if q %}
+<div class="text-xs text-base-content/50 mb-3 px-1">
+  {{ results|length }} result{{ "s" if results|length != 1 else "" }} for
+  <span class="font-mono text-primary">{{ q }}</span>
+</div>
+{% endif %}
+
+<div class="space-y-2">
+  {% for r in results %}
+  <a href="{{ r.url }}"
+     class="glass glass-hover rounded-xl p-3 flex items-center gap-3 border-l-4
+            {% if r.module == 'logistics' %}border-primary{% else %}border-secondary{% endif %}">
+    <span class="text-xl">{% if r.module == 'logistics' %}🚢{% else %}✈️{% endif %}</span>
+    <div class="flex-1 min-w-0">
+      <div class="font-bold truncate">{{ r.title }}</div>
+      <div class="text-xs text-base-content/60 truncate">{{ r.subtitle }}</div>
+    </div>
+    <span class="badge badge-ghost badge-xs">{{ r.match }}</span>
+  </a>
+  {% endfor %}
+
+  {% if q and not results %}
+  <div class="text-center py-12 text-base-content/40 text-sm">
+    📭 Nothing matched. Try shorter terms or toggle modules.
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

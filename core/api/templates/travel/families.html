@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Travel — Families{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-secondary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">👪 Families</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        People auto-grouped by surname + DOB + address heuristics.
+      </p>
+    </div>
+    <a href="/travel" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+{% if not db_present %}
+<div class="alert alert-info shadow-md">
+  <span>ℹ️</span>
+  <span>No travel database yet.</span>
+  <a href="/travel/upload" class="btn btn-secondary btn-sm ml-auto">Upload →</a>
+</div>
+{% elif not families %}
+<div class="glass rounded-2xl p-12 text-center text-base-content/50">
+  <div class="text-4xl mb-3">👪</div>
+  <div class="mb-1">No families yet.</div>
+  <div class="text-xs">Auto-grouping kicks in once enough persons share a surname or address.</div>
+</div>
+{% else %}
+
+<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for f in families %}
+  {% set status = f.case_status or "COLLECTING" %}
+  {% set status_color = {
+    "COLLECTING": "warning", "READY": "info", "IN_REVIEW": "info",
+    "SUBMITTED": "primary", "APPROVED": "success", "REJECTED": "error"
+  }.get(status, "ghost") %}
+  <a href="/travel/families/{{ f.id }}"
+     class="glass glass-hover rounded-2xl p-5 border-l-4 border-secondary block">
+    <div class="flex items-start justify-between gap-2 mb-3">
+      <div>
+        <h2 class="text-lg font-extrabold tracking-tight">
+          👪 {{ f.family_name or "—" }}
+        </h2>
+        {% if f.case_reference %}
+        <div class="text-xs font-mono text-base-content/50 mt-1">
+          ref: {{ f.case_reference }}
+        </div>
+        {% endif %}
+      </div>
+      <span class="badge badge-{{ status_color }} badge-sm">{{ status }}</span>
+    </div>
+
+    {% if f.address %}
+    <div class="text-xs text-base-content/60 mb-3 line-clamp-2">
+      📍 {{ f.address }}
+    </div>
+    {% endif %}
+
+    <div class="flex items-center gap-2 mb-3 pb-3 border-b border-base-content/10">
+      <div class="badge badge-ghost badge-sm">👤 {{ f.n_persons }} person{{ "s" if f.n_persons != 1 else "" }}</div>
+      <div class="badge badge-ghost badge-sm">📄 {{ f.n_docs }} doc{{ "s" if f.n_docs != 1 else "" }}</div>
+    </div>
+
+    {% if f.next_action %}
+    <div class="text-xs text-info mb-1">
+      → {{ f.next_action }}
+      {% if f.next_action_date %}<span class="text-base-content/40">· {{ f.next_action_date }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if f.notes %}
+    <div class="text-xs text-base-content/50 italic line-clamp-2">{{ f.notes }}</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{% endif %}
+
+{% endblock %}

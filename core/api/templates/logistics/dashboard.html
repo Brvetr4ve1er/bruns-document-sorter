@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}Logistics — Dashboard{% endblock %}
+
+{% block content %}
+
+{# ─── Hero ────────────────────────────────────────────────────────────── #}
+<div class="glass rounded-2xl p-6 md:p-8 mb-6 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">
+        🚢 Dashboard
+      </h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Filter and browse all processed containers.
+      </p>
+    </div>
+    <a href="/logistics/upload" class="btn btn-primary btn-sm md:btn-md">
+      → Upload Documents
+    </a>
+  </div>
+</div>
+
+{# ─── P1-A: Operator Action Center ────────────────────────────────────── #}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+  <a href="/logistics/review"
+     class="glass glass-hover rounded-xl p-4 border-l-4 {% if action.review %}border-error{% else %}border-base-content/10{% endif %}">
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">
+          {% if action.review %}🔴 Needs review{% else %}✓ Review queue{% endif %}
+        </div>
+        <div class="text-3xl font-extrabold {% if action.review %}text-error{% else %}text-base-content/40{% endif %}">
+          {{ action.review }}
+        </div>
+        <div class="text-[10px] text-base-content/40 mt-1">
+          {% if action.review %}low-confidence docs to verify{% else %}all clear{% endif %}
+        </div>
+      </div>
+      {% if action.review %}<span class="text-xs">→</span>{% endif %}
+    </div>
+  </a>
+
+  <a href="/logistics/sheet?status=IN_TRANSIT"
+     class="glass glass-hover rounded-xl p-4 border-l-4 {% if action.dnd_risk %}border-warning{% else %}border-base-content/10{% endif %}">
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">
+          {% if action.dnd_risk %}🟠 D&D at risk{% else %}✓ No D&D risk{% endif %}
+        </div>
+        <div class="text-3xl font-extrabold {% if action.dnd_risk %}text-warning{% else %}text-base-content/40{% endif %}">
+          {{ action.dnd_risk }}
+        </div>
+        <div class="text-[10px] text-base-content/40 mt-1">
+          ETA passed, not delivered
+        </div>
+      </div>
+      {% if action.dnd_risk %}<span class="text-xs">→</span>{% endif %}
+    </div>
+  </a>
+
+  <a href="/logistics/sheet"
+     class="glass glass-hover rounded-xl p-4 border-l-4 {% if action.gaps %}border-info{% else %}border-base-content/10{% endif %}">
+    <div class="flex items-start justify-between">
+      <div>
+        <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">
+          {% if action.gaps %}🟡 Data gaps{% else %}✓ No gaps{% endif %}
+        </div>
+        <div class="text-3xl font-extrabold {% if action.gaps %}text-info{% else %}text-base-content/40{% endif %}">
+          {{ action.gaps }}
+        </div>
+        <div class="text-[10px] text-base-content/40 mt-1">
+          delivered, no customs date
+        </div>
+      </div>
+      {% if action.gaps %}<span class="text-xs">→</span>{% endif %}
+    </div>
+  </a>
+
+  <div class="glass rounded-xl p-4 border-l-4 border-success">
+    <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">🟢 On track</div>
+    <div class="text-3xl font-extrabold text-success">{{ action.on_track }}</div>
+    <div class="text-[10px] text-base-content/40 mt-1">healthy containers</div>
+  </div>
+</div>
+
+{# ─── Stat cards (totals) ───────────────────────────────────────────── #}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+  <div class="glass rounded-xl p-3">
+    <div class="text-[10px] uppercase text-base-content/40 tracking-wider mb-1">Shipments</div>
+    <div class="text-2xl font-bold">{{ "{:,}".format(stats.shipments) }}</div>
+  </div>
+  <div class="glass rounded-xl p-3">
+    <div class="text-[10px] uppercase text-base-content/40 tracking-wider mb-1">Containers</div>
+    <div class="text-2xl font-bold text-primary">{{ "{:,}".format(stats.containers) }}</div>
+  </div>
+  <div class="glass rounded-xl p-3">
+    <div class="text-[10px] uppercase text-base-content/40 tracking-wider mb-1">Booked</div>
+    <div class="text-2xl font-bold">{{ "{:,}".format(stats.booked) }}</div>
+  </div>
+  <div class="glass rounded-xl p-3">
+    <div class="text-[10px] uppercase text-base-content/40 tracking-wider mb-1">In Transit</div>
+    <div class="text-2xl font-bold text-secondary">{{ "{:,}".format(stats.in_transit) }}</div>
+  </div>
+</div>
+
+{# ─── Container table ─────────────────────────────────────────────────── #}
+<div class="glass rounded-2xl p-4 md:p-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-bold">Recent Containers</h2>
+    <span class="text-xs text-base-content/50">
+      Showing latest {{ containers|length }} of {{ "{:,}".format(stats.containers) }}
+    </span>
+  </div>
+
+  {% if containers %}
+  <div class="overflow-x-auto">
+    <table class="table table-sm table-zebra">
+      <thead>
+        <tr class="text-base-content/60 uppercase text-xs">
+          <th>Container</th>
+          <th>Size</th>
+          <th>Status</th>
+          <th>TAN</th>
+          <th>Carrier</th>
+          <th>Port</th>
+          <th>ETD</th>
+          <th>ETA</th>
+          <th>Source</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in containers %}
+        <tr class="hover cursor-pointer"
+            onclick="window.location.href='/logistics/containers/{{ c.id }}'">
+          <td class="font-mono font-bold">
+            <a href="/logistics/containers/{{ c.id }}" class="link link-hover link-primary">
+              {{ c.container_number or "—" }}
+            </a>
+          </td>
+          <td>{{ c.size or "—" }}</td>
+          <td>
+            {% set s = c.statut_container or "" %}
+            {% if s in ("DELIVERED", "DELIVERED_FULL") %}
+              <span class="badge badge-success badge-sm">{{ s }}</span>
+            {% elif s in ("IN_TRANSIT", "EN_ROUTE") %}
+              <span class="badge badge-info badge-sm">{{ s }}</span>
+            {% elif s in ("BOOKED", "PENDING") %}
+              <span class="badge badge-warning badge-sm">{{ s }}</span>
+            {% elif s %}
+              <span class="badge badge-ghost badge-sm">{{ s }}</span>
+            {% else %}
+              <span class="text-base-content/40">—</span>
+            {% endif %}
+          </td>
+          <td class="font-mono text-xs">{{ c.tan or "—" }}</td>
+          <td>{{ c.compagnie_maritime or "—" }}</td>
+          <td>{{ c.port or "—" }}</td>
+          <td class="text-xs">{{ c.etd or "—" }}</td>
+          <td class="text-xs">{{ c.eta or "—" }}</td>
+          <td class="text-xs text-base-content/50 truncate max-w-[180px]">{{ c.source_file or "—" }}</td>
+          <td>
+            <a href="/logistics/containers/{{ c.id }}" class="btn btn-ghost btn-xs">📄 View / Edit</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-12 text-base-content/50">
+    <div class="text-4xl mb-2">📭</div>
+    <div>No containers yet.</div>
+    <a href="/logistics/upload" class="btn btn-primary btn-sm mt-4">
+      → Upload your first PDF
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+{# ─── P2-B: Natural Language Query ────────────────────────────────────── #}
+<div class="glass rounded-2xl p-4 md:p-6 mt-4">
+  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+    <h2 class="text-lg font-bold">🤖 Ask your data</h2>
+    <span class="text-xs text-base-content/40">
+      Powered by local Ollama — no API fees, no data leaves your machine
+    </span>
+  </div>
+  <form id="ask-form"
+        hx-post="/logistics/ask"
+        hx-target="#ask-result"
+        hx-swap="innerHTML"
+        hx-indicator="#ask-spinner"
+        class="flex gap-2">
+    <input name="q" type="text"
+           placeholder="e.g. 'Show all CMA-CGM containers with no delivery date' or 'Combien de conteneurs sont en transit ?'"
+           class="input input-bordered input-sm bg-base-200 flex-1 text-sm" />
+    <button type="submit" class="btn btn-primary btn-sm gap-1">
+      <span id="ask-spinner" class="htmx-indicator loading loading-spinner loading-xs"></span>
+      Ask
+    </button>
+  </form>
+  <div id="ask-result"></div>
+</div>
+
+{# ─── P1-D: Activity feed (audit log) ─────────────────────────────────── #}
+{% if activity %}
+<div class="glass rounded-2xl p-4 md:p-6 mt-4">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-bold">📋 Recent activity</h2>
+    <span class="text-xs text-base-content/40">last {{ activity|length }} actions</span>
+  </div>
+  <ul class="space-y-1 max-h-[24rem] overflow-y-auto">
+    {% for a in activity %}
+    <li class="grid grid-cols-[120px_140px_1fr] gap-3 items-center py-1.5 px-2 rounded hover:bg-base-200/40 text-xs">
+      <span class="text-base-content/40 font-mono">
+        {{ a.timestamp[:19] if a.timestamp else "—" }}
+      </span>
+      <span class="badge badge-ghost badge-sm whitespace-nowrap">
+        {{ a.action }}
+      </span>
+      <span class="text-base-content/70">
+        {% if a.entity_type == 'documents' and a.entity_id %}
+          <a href="/logistics/documents/{{ a.entity_id }}" class="link link-hover link-primary">
+            doc #{{ a.entity_id }}
+          </a>
+        {% elif a.entity_type == 'containers' and a.entity_id %}
+          <a href="/logistics/containers/{{ a.entity_id }}" class="link link-hover link-primary">
+            container #{{ a.entity_id }}
+          </a>
+        {% else %}
+          {{ a.entity_type }} #{{ a.entity_id }}
+        {% endif %}
+        <span class="text-base-content/40">— by {{ a.actor or "system" }}</span>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% endblock %}

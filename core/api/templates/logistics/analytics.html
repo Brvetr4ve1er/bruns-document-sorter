@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Logistics — Analytics{% endblock %}
+
+{% block content %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-primary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-black tracking-tight mb-1">📊 Analytics</h1>
+      <p class="text-base-content/70 text-sm md:text-base">
+        Container status, carrier mix, monthly volume, and average transit times.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="window.print()" class="btn btn-ghost btn-sm print-hide">🖨 Print PDF</button>
+      <a href="/logistics" class="btn btn-ghost btn-sm">← Dashboard</a>
+    </div>
+  </div>
+</div>
+
+{% if not db_present %}
+<div class="alert alert-info shadow-md">No logistics database yet.</div>
+{% else %}
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+  <div class="glass rounded-xl p-3"><div class="text-[10px] uppercase text-base-content/40">Shipments</div><div class="text-2xl font-bold">{{ stats.shipments }}</div></div>
+  <div class="glass rounded-xl p-3"><div class="text-[10px] uppercase text-base-content/40">Containers</div><div class="text-2xl font-bold text-primary">{{ stats.containers }}</div></div>
+  <div class="glass rounded-xl p-3"><div class="text-[10px] uppercase text-base-content/40">Booked</div><div class="text-2xl font-bold">{{ stats.booked }}</div></div>
+  <div class="glass rounded-xl p-3"><div class="text-[10px] uppercase text-base-content/40">In Transit</div><div class="text-2xl font-bold text-secondary">{{ stats.in_transit }}</div></div>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-4">
+  <div class="glass rounded-2xl p-4">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">Status mix</h2>
+    <div class="relative h-64"><canvas id="ch-status"></canvas></div>
+  </div>
+  <div class="glass rounded-2xl p-4">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">Top carriers</h2>
+    <div class="relative h-64"><canvas id="ch-carrier"></canvas></div>
+  </div>
+  <div class="glass rounded-2xl p-4">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">Shipments / month</h2>
+    <div class="relative h-64"><canvas id="ch-month"></canvas></div>
+  </div>
+  <div class="glass rounded-2xl p-4">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">Avg transit (days, ETD→ETA)</h2>
+    <div class="relative h-64"><canvas id="ch-transit"></canvas></div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='chart.min.js') }}"></script>
+<script>
+  const CHARTS = {{ charts | tojson }};
+  function colorFor() {
+    const css = getComputedStyle(document.documentElement);
+    const p = css.getPropertyValue('--p').trim() || '270 100% 70%';
+    const s = css.getPropertyValue('--s').trim() || '200 100% 60%';
+    return { p: `hsl(${p})`, s: `hsl(${s})`, grid: 'rgba(127,127,127,0.15)' };
+  }
+  function bar(ctxId, data, color, axis = 'y') {
+    const c = document.getElementById(ctxId);
+    if (!c || !data || data.length === 0) return;
+    const colors = colorFor();
+    new Chart(c, {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.label),
+        datasets: [{ data: data.map(d => d.value), backgroundColor: color || colors.p }]
+      },
+      options: {
+        indexAxis: axis === 'x' ? 'x' : 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#888' }, grid: { color: colors.grid } },
+          y: { ticks: { color: '#888' }, grid: { color: colors.grid } },
+        },
+      },
+    });
+  }
+  function line(ctxId, data, color) {
+    const c = document.getElementById(ctxId);
+    if (!c || !data || data.length === 0) return;
+    const colors = colorFor();
+    new Chart(c, {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.label),
+        datasets: [{ data: data.map(d => d.value), borderColor: color || colors.s,
+                     backgroundColor: 'transparent', tension: 0.3, fill: false }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#888' }, grid: { color: colors.grid } },
+          y: { ticks: { color: '#888' }, grid: { color: colors.grid }, beginAtZero: true },
+        },
+      },
+    });
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    const c = colorFor();
+    bar('ch-status', CHARTS.by_status, c.p);
+    bar('ch-carrier', CHARTS.by_carrier, c.s);
+    line('ch-month', CHARTS.shipments_by_month, c.p);
+    bar('ch-transit', CHARTS.transit_by_carrier, c.s);
+  });
+</script>
+{% endblock %}

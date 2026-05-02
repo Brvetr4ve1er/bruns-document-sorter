@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Travel — {{ f.family_name or "Family" }}{% endblock %}
+
+{% block content %}
+
+{% set status = f.case_status or "COLLECTING" %}
+{% set status_color = {
+  "COLLECTING": "warning",
+  "READY":      "info",
+  "IN_REVIEW":  "info",
+  "SUBMITTED":  "primary",
+  "APPROVED":   "success",
+  "REJECTED":   "error",
+}.get(status, "ghost") %}
+
+<div class="glass rounded-2xl p-5 md:p-6 mb-5 border-t-4 border-secondary halo">
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wider text-base-content/50 mb-1">Family case</div>
+      <h1 class="text-2xl font-black tracking-tight">👪 {{ f.family_name or "—" }}</h1>
+      <div class="text-sm text-base-content/60 mt-1 flex flex-wrap items-center gap-2">
+        <span class="badge badge-{{ status_color }} badge-sm">{{ status }}</span>
+        {% if f.case_reference %}<span class="font-mono text-xs">ref: {{ f.case_reference }}</span>{% endif %}
+        {% if f.address %}<span>·</span><span class="text-xs">📍 {{ f.address }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <a href="/travel/families" class="btn btn-ghost btn-sm">← Families</a>
+      <a href="/travel/families/{{ f.id }}/export" class="btn btn-secondary btn-sm">📦 Export ZIP</a>
+    </div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-4">
+
+  {# ── Left: completeness gate ── #}
+  <div class="glass rounded-2xl p-5 lg:col-span-2">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60">
+        ✅ Completeness ({{ completeness.completeness_pct }}%)
+      </h2>
+      {% if completeness.can_advance %}
+        <span class="badge badge-success badge-sm">Ready to advance</span>
+      {% else %}
+        <span class="badge badge-warning badge-sm">{{ completeness.blockers|length }} blocker(s)</span>
+      {% endif %}
+    </div>
+
+    <progress class="progress progress-{{ 'success' if completeness.completeness_pct == 100 else 'warning' }} w-full h-3"
+              value="{{ completeness.completeness_pct }}" max="100"></progress>
+
+    {% if completeness.members %}
+    <div class="space-y-2 mt-4">
+      {% for m in completeness.members %}
+      <div class="rounded-lg p-3 {% if m.missing %}bg-warning/5 border border-warning/20{% else %}bg-success/5 border border-success/20{% endif %}">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <a href="/travel/persons/{{ m.person_id }}" class="font-bold link link-hover">
+              {{ m.name or "Person #" + m.person_id|string }}
+            </a>
+            <span class="badge badge-ghost badge-xs ml-1">{{ m.role }}</span>
+          </div>
+          <span class="text-xs font-mono {% if m.pct == 100 %}text-success{% else %}text-warning{% endif %}">
+            {{ m.pct }}%
+          </span>
+        </div>
+        <div class="text-xs mt-2 flex flex-wrap gap-1">
+          {% for r in m.required %}
+            {% if r in m.present %}
+              <span class="badge badge-success badge-xs">✓ {{ r.replace('_', ' ') }}</span>
+            {% else %}
+              <span class="badge badge-warning badge-xs">✗ {{ r.replace('_', ' ') }}</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-base-content/50 mt-3">No persons in this family yet.</p>
+    {% endif %}
+
+    {% if completeness.blockers %}
+    <div class="mt-3 p-2 rounded bg-warning/10 text-xs text-warning">
+      <strong>Blocking advance:</strong>
+      <ul class="list-disc ml-4 mt-1">
+        {% for b in completeness.blockers %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Right: status flow + next action ── #}
+  <div class="glass rounded-2xl p-5">
+    <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">
+      🚦 Case flow
+    </h2>
+
+    <div class="flex flex-wrap gap-1 text-[10px] mb-4">
+      {% for s in status_flow %}
+        <span class="badge {% if s == status %}badge-{{ status_color }}{% else %}badge-ghost{% endif %} badge-sm">
+          {{ s }}
+        </span>
+        {% if not loop.last %}<span class="text-base-content/30">→</span>{% endif %}
+      {% endfor %}
+    </div>
+
+    <form hx-post="/travel/families/{{ f.id }}"
+          hx-target="#fam-save-result" hx-swap="innerHTML" class="space-y-3">
+
+      <label class="form-control">
+        <span class="label-text text-xs uppercase tracking-wider mb-1">Status</span>
+        <select name="case_status" class="select select-bordered select-sm bg-base-200">
+          {% for s in status_flow %}
+          <option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="form-control">
+        <span class="label-text text-xs uppercase tracking-wider mb-1">Next action</span>
+        <input name="next_action" type="text" value="{{ f.next_action or '' }}"
+               placeholder="e.g. Submit visa application"
+               class="input input-bordered input-sm bg-base-200" />
+      </label>
+
+      <label class="form-control">
+        <span class="label-text text-xs uppercase tracking-wider mb-1">Deadline</span>
+        <input name="next_action_date" type="date" value="{{ f.next_action_date or '' }}"
+               class="input input-bordered input-sm bg-base-200" />
+      </label>
+
+      <div id="fam-save-result" class="min-h-[1.5rem]"></div>
+
+      <button type="submit" class="btn btn-primary btn-sm w-full">💾 Save</button>
+    </form>
+
+    {% if not completeness.can_advance %}
+    <div class="text-[10px] text-warning mt-3">
+      ⚠ Cannot advance to IN_REVIEW or beyond until completeness = 100%.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Recent docs ── #}
+{% if recent_docs %}
+<div class="glass rounded-2xl p-4 md:p-5 mt-4">
+  <h2 class="text-sm font-bold uppercase tracking-wider text-base-content/60 mb-3">
+    📄 Recent documents ({{ recent_docs|length }})
+  </h2>
+  <div class="overflow-x-auto">
+    <table class="table table-sm table-zebra">
+      <thead>
+        <tr class="text-base-content/60 uppercase text-xs">
+          <th>Type</th><th>Number</th><th>Person</th><th>Expiry</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in recent_docs %}
+        <tr class="hover">
+          <td><span class="badge badge-ghost badge-sm">{{ d.doc_type }}</span></td>
+          <td class="font-mono text-xs">{{ d.doc_number or "—" }}</td>
+          <td><a href="/travel/persons/{{ d.person_id }}" class="link link-hover">{{ d.full_name or "—" }}</a></td>
+          <td class="font-mono text-xs">{{ d.expiry_date or "—" }}</td>
+          <td><a href="/travel/documents/{{ d.id }}" class="btn btn-ghost btn-xs">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

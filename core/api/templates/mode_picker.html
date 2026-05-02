@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Document Intelligence — Mode Picker{% endblock %}
+
+{# Hide the topbar on the splash — entire viewport is the picker #}
+{% block topbar %}{% endblock %}
+
+{% block content %}
+<section class="halo min-h-screen-safe -mx-4 -my-6 px-4 py-12 flex flex-col items-center justify-center">
+
+  <div class="text-xs font-semibold uppercase tracking-[0.16em] text-primary mb-3">
+    Document Intelligence Platform
+  </div>
+  <h1 class="text-4xl md:text-5xl font-black tracking-tight text-center mb-2">
+    What are you working on?
+  </h1>
+  <p class="text-base-content/60 text-center max-w-xl mb-12">
+    Two completely isolated workspaces. Your data, prompts, and database never mix.
+  </p>
+
+  <div class="grid md:grid-cols-2 gap-6 max-w-4xl w-full">
+
+    <!-- Logistics card -->
+    <a href="/logistics"
+       class="glass glass-hover rounded-2xl p-8 group relative overflow-hidden
+              border-l-4 border-primary">
+      <div class="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full
+                  bg-primary/30 blur-3xl pointer-events-none opacity-50
+                  group-hover:opacity-80 transition-opacity"></div>
+      <div class="relative">
+        <div class="text-5xl mb-4">🚢</div>
+        <h2 class="text-2xl font-extrabold mb-2">Logistics</h2>
+        <div class="badge badge-primary badge-outline mb-4 uppercase tracking-wider text-xs">
+          Shipment Tracking
+        </div>
+        <p class="text-base-content/70 text-sm leading-relaxed mb-5">
+          Parse shipping documents with LLM + OCR. Track containers, TAN numbers,
+          and carriers end-to-end.
+        </p>
+        <ul class="text-sm space-y-1.5 text-base-content/60 border-t border-base-content/10 pt-4">
+          <li class="flex gap-2"><span class="text-primary">●</span> Booking confirmations &amp; Bills of Lading</li>
+          <li class="flex gap-2"><span class="text-primary">●</span> Container lifecycle (size, seal, status)</li>
+          <li class="flex gap-2"><span class="text-primary">●</span> Demurrage, customs &amp; delivery tracking</li>
+          <li class="flex gap-2"><span class="text-primary">●</span> 49-column Excel export (target format)</li>
+        </ul>
+      </div>
+    </a>
+
+    <!-- Travel card -->
+    <a href="/travel"
+       class="glass glass-hover rounded-2xl p-8 group relative overflow-hidden
+              border-l-4 border-secondary">
+      <div class="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full
+                  bg-secondary/30 blur-3xl pointer-events-none opacity-50
+                  group-hover:opacity-80 transition-opacity"></div>
+      <div class="relative">
+        <div class="text-5xl mb-4">✈️</div>
+        <h2 class="text-2xl font-extrabold mb-2">Travel Agency</h2>
+        <div class="badge badge-secondary badge-outline mb-4 uppercase tracking-wider text-xs">
+          Identity Management
+        </div>
+        <p class="text-base-content/70 text-sm leading-relaxed mb-5">
+          Extract identity data from passports, IDs and visas. Auto-group people
+          into families with MRZ + LLM.
+        </p>
+        <ul class="text-sm space-y-1.5 text-base-content/60 border-t border-base-content/10 pt-4">
+          <li class="flex gap-2"><span class="text-secondary">●</span> Passports, ID cards, visas, birth certificates</li>
+          <li class="flex gap-2"><span class="text-secondary">●</span> Deterministic MRZ parsing (TD1 / TD3)</li>
+          <li class="flex gap-2"><span class="text-secondary">●</span> Auto person → family matching &amp; linking</li>
+          <li class="flex gap-2"><span class="text-secondary">●</span> Per-family folder tree + XLSX + ZIP export</li>
+        </ul>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- Footer info -->
+  <div class="mt-10 text-xs text-base-content/40 text-center">
+    BI bridge:
+    <a class="link link-hover" href="/api/logistics/shipments_full" target="_blank">
+      <code class="text-base-content/60">/api/logistics/shipments_full</code>
+    </a>
+    &nbsp;·&nbsp;
+    <a class="link link-hover" href="/api/status" target="_blank">
+      <code class="text-base-content/60">/api/status</code>
+    </a>
+  </div>
+
+</section>
+{% endblock %}
