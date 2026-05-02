@@ -123,7 +123,10 @@ For full troubleshooting see **[INSTALLATION.md](INSTALLATION.md)**.
 
 ## 📚 Documentation
 
-Full project wiki lives in [`docs/`](docs/README.md). Highlights:
+- **[INSTALLATION.md](INSTALLATION.md)** — install on a clean machine + troubleshooting
+- Full project wiki: [`docs/`](docs/README.md)
+
+Highlights from the wiki:
 
 - [Overview](docs/01-OVERVIEW.md) — what this is, who it's for, why local-first
 - [How it works](docs/02-HOW-IT-WORKS.md) — end-to-end pipeline walkthrough
@@ -134,7 +137,7 @@ Full project wiki lives in [`docs/`](docs/README.md). Highlights:
 - [Use cases](docs/07-USE-CASES.md) — where this fits in the real world
 - [Marketing plan](docs/08-MARKETING-PLAN.md) — positioning, ICP, GTM
 - [Roadmap & improvements](docs/09-ROADMAP-IMPROVEMENTS.md) — what's next
-- [Deployment](docs/10-DEPLOYMENT.md) — install, run, troubleshoot
+- [Tech debt cleanup plan](docs/TECH-DEBT-CLEANUP.md) — surgical strategy
 - [Architecture rules](docs/ARCHITECTURE.md) — package boundaries (enforced by tests)
 
 ---
