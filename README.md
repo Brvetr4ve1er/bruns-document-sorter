@@ -80,15 +80,44 @@ BRUNs logistics data scraper/
 
 ## 🚀 Running the Application
 
-1. **Start the LLM Backend:** Ensure Ollama is running on your machine.
-2. **Start the Background Worker:** (Required for processing large batches)
-   ```powershell
-   .\.venv\Scripts\huey_consumer.py core.pipeline.queue.task_queue
-   ```
-3. **Launch the Dashboard:**
-   ```powershell
-   .\START_APP.bat
-   ```
+### First-time install (clean machine)
+
+**Windows:**
+```cmd
+git clone https://github.com/Brvetr4ve1er/BRUNs-logistics-data-scraper.git
+cd BRUNs-logistics-data-scraper
+INSTALL.bat
+START_APP.bat
+```
+
+**Linux / macOS:**
+```bash
+git clone https://github.com/Brvetr4ve1er/BRUNs-logistics-data-scraper.git
+cd BRUNs-logistics-data-scraper
+chmod +x install.sh start.sh
+./install.sh
+./start.sh
+```
+
+`INSTALL.bat` / `install.sh` is idempotent — it walks 7 steps (Python check
+→ venv → pip install → Tesseract + language packs → Ollama probe →
+data dirs → DB migrations) and skips anything already done. Re-running is
+safe.
+
+After install, just use `START_APP.bat` (or `./start.sh`) — it bootstraps
+the venv automatically if anything is missing and opens the browser at
+`http://localhost:7845/`.
+
+### Prerequisites the installer expects
+
+| Requirement | Auto-installed? | Manual fallback |
+|---|---|---|
+| Python 3.10+ | No (must be on PATH) | https://www.python.org/downloads/ |
+| Tesseract OCR | Yes (Windows: `install_tesseract.bat`) | macOS: `brew install tesseract` · Linux: `apt install tesseract-ocr` |
+| Tesseract language packs (eng/fra/ara) | Yes (downloaded into `tessdata/`) | https://github.com/tesseract-ocr/tessdata |
+| Ollama + llama3 model | Probed; offers to `ollama pull llama3` | https://ollama.com/download |
+
+For full troubleshooting see **[INSTALLATION.md](INSTALLATION.md)**.
 
 ---
 
