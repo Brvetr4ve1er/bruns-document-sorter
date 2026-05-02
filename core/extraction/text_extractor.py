@@ -8,9 +8,12 @@ Strategy order:
 """
 
 import io
+import logging
 import os
 import fitz  # PyMuPDF
 from PIL import Image
+
+log = logging.getLogger(__name__)
 
 MIN_TEXT_CHARS = 30   # below this → treat page as image-only
 
@@ -56,7 +59,7 @@ def extract_text(file_path: str) -> str:
     elif ext == ".pdf":
         return _extract_from_pdf(file_path)
     else:
-        print(f"  [extractor] unsupported extension {ext} for {os.path.basename(file_path)}")
+        log.warning("unsupported extension %s for %s", ext, os.path.basename(file_path))
         return ""
 
 def _extract_from_pdf(pdf_path: str) -> str:
@@ -71,7 +74,7 @@ def _extract_from_pdf(pdf_path: str) -> str:
             page_texts.append(text)
         else:
             # Page is image-only — try OCR
-            print(f"  [extractor] page {page_num+1} has no embedded text -> trying OCR")
+            log.debug("page %d has no embedded text -> trying OCR", page_num + 1)
             ocr_text = _ocr_page(page, page_num, pdf_path)
             page_texts.append(ocr_text)
 
@@ -79,15 +82,15 @@ def _extract_from_pdf(pdf_path: str) -> str:
     result = "\n".join(page_texts).strip()
 
     if result:
-        print(f"  [extractor] extracted {len(result)} chars from {os.path.basename(pdf_path)}")
+        log.info("extracted %d chars from %s", len(result), os.path.basename(pdf_path))
     else:
-        print(f"  [extractor] WARNING: no text extracted from {os.path.basename(pdf_path)}")
+        log.warning("no text extracted from %s", os.path.basename(pdf_path))
 
     return result
 
 def _extract_from_image(image_path: str) -> str:
     """Extract text from a standalone image file using Tesseract or Vision."""
-    print(f"  [extractor] processing image {os.path.basename(image_path)}")
+    log.info("processing image %s", os.path.basename(image_path))
     try:
         doc = fitz.open(image_path)
         page = doc[0]
@@ -95,13 +98,13 @@ def _extract_from_image(image_path: str) -> str:
         doc.close()
         
         if text:
-            print(f"  [extractor] extracted {len(text)} chars from image {os.path.basename(image_path)}")
+            log.info("extracted %d chars from image %s", len(text), os.path.basename(image_path))
         else:
-            print(f"  [extractor] WARNING: no text extracted from image {os.path.basename(image_path)}")
-            
+            log.warning("no text extracted from image %s", os.path.basename(image_path))
+
         return text
     except Exception as e:
-        print(f"  [extractor] error processing image {os.path.basename(image_path)}: {e}")
+        log.error("error processing image %s: %s", os.path.basename(image_path), e, exc_info=False)
         return ""
 
 def is_image_pdf(pdf_path: str) -> bool:
@@ -118,18 +121,44 @@ def is_image_pdf(pdf_path: str) -> bool:
 # Strategy 2 — Tesseract OCR
 # ─────────────────────────────────────────────────────────────────────────────
 
+# TD6 fix: cache the probe result. Previously every page of a scanned PDF
+# spawned `tesseract --version` to check availability — adding measurable
+# overhead on long scanned documents. The result never changes within a
+# process lifetime, so a module-level cache is safe.
+_TESSERACT_AVAILABLE: bool | None = None
+
+
 def _tesseract_available() -> bool:
-    try:
-        import pytesseract
-        pytesseract.get_tesseract_version()
-        return True
-    except Exception:
+    global _TESSERACT_AVAILABLE
+    if _TESSERACT_AVAILABLE is None:
+        try:
+            import pytesseract
+            pytesseract.get_tesseract_version()
+            _TESSERACT_AVAILABLE = True
+        except Exception:
+            _TESSERACT_AVAILABLE = False
+    return _TESSERACT_AVAILABLE
+
+def _has_arabic(text: str) -> bool:
+    """True if `text` contains characters in the Arabic Unicode block."""
+    if not text:
         return False
+    for ch in text:
+        cp = ord(ch)
+        if 0x0600 <= cp <= 0x06FF or 0x0750 <= cp <= 0x077F or 0xFB50 <= cp <= 0xFDFF or 0xFE70 <= cp <= 0xFEFF:
+            return True
+    return False
+
 
 def _ocr_with_tesseract(page: fitz.Page) -> str:
-    """Render page to image and run Tesseract OCR on it."""
+    """Render page to image and run Tesseract OCR on it.
+
+    P2-F: First pass with fra+eng. If the result hints at Arabic content
+    (Unicode range or low-yield page where the bundled `ara.traineddata`
+    might fit better), re-run with ara+fra+eng for the Algerian market.
+    """
     import pytesseract
-    
+
     mat = fitz.Matrix(300 / 72, 300 / 72)
     pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
     img_bytes = pix.tobytes("png")
@@ -140,7 +169,17 @@ def _ocr_with_tesseract(page: fitz.Page) -> str:
     except Exception:
         text = pytesseract.image_to_string(img)
 
-    return text.strip()
+    text = (text or "").strip()
+    if _has_arabic(text) or len(text) < 40:
+        try:
+            text_ar = pytesseract.image_to_string(img, lang="ara+fra+eng")
+            if text_ar and (len(text_ar.strip()) > len(text) or _has_arabic(text_ar)):
+                log.info("Arabic detected -> ara+fra+eng OCR (%d chars)", len(text_ar))
+                return text_ar.strip()
+        except Exception as e:
+            log.warning("Arabic OCR fallback failed: %s", e)
+
+    return text
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Strategy 3 — Ollama vision model
@@ -199,7 +238,7 @@ def _ocr_with_ollama_vision(page: fitz.Page, model: str) -> str:
         resp.raise_for_status()
         return resp.json().get("response", "").strip()
     except Exception as e:
-        print(f"  [extractor] Ollama vision failed: {e}")
+        log.warning("Ollama vision failed: %s", e)
         return ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -210,23 +249,23 @@ def _ocr_page(page: fitz.Page, page_num: int, file_path: str) -> str:
     """Try available OCR strategies for a single image page."""
     
     if _tesseract_available():
-        print(f"  [extractor] using Tesseract OCR on page {page_num+1}")
+        log.debug("using Tesseract OCR on page %d", page_num + 1)
         try:
             text = _ocr_with_tesseract(page)
             if text:
                 return text
         except Exception as e:
-            print(f"  [extractor] Tesseract error: {e}")
+            log.warning("Tesseract error on page %d: %s", page_num + 1, e)
 
     vision_ok, vision_model = _ollama_vision_available()
     if vision_ok:
-        print(f"  [extractor] using Ollama vision ({vision_model}) on page {page_num+1}")
+        log.info("using Ollama vision (%s) on page %d", vision_model, page_num + 1)
         try:
             text = _ocr_with_ollama_vision(page, vision_model)
             if text:
                 return text
         except Exception as e:
-            print(f"  [extractor] vision model error: {e}")
+            log.warning("vision model error on page %d: %s", page_num + 1, e)
 
-    print(f"  [extractor] page {page_num+1}: no OCR method available — page will be skipped")
+    log.warning("page %d: no OCR method available — page will be skipped", page_num + 1)
     return ""

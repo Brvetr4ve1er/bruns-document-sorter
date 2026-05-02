@@ -7,182 +7,164 @@ to swap it.
 
 | Layer | Technology | Why this one |
 |-------|------------|-------------|
-| Language | Python 3.11+ | Mandatory for Pydantic v2 features and modern type hints |
-| UI (current) | Streamlit 1.56 | Fastest path to a working dashboard; trades flexibility for speed |
-| UI (target) | Flask + HTMX + DaisyUI | See [09-ROADMAP-IMPROVEMENTS.md](09-ROADMAP-IMPROVEMENTS.md) — full operator UI |
+| Language | Python 3.14 (project runs on 3.14; 3.11+ required by Pydantic v2) | Modern type hints, walrus operator, Pydantic v2 compatibility |
+| UI | Flask 3.1 + HTMX 2.0 + DaisyUI 4.12 | Server-rendered, no build step, 31 themes via CDN |
 | LLM runtime | Ollama (default `llama3`) | Local inference, zero API cost, data never leaves machine |
-| PDF text | PyMuPDF (`fitz`) | Fastest pure-Python PDF text extraction; lossless |
-| OCR | Tesseract via `pytesseract` | Industry-standard OSS OCR; bundled installer ships with the app |
-| Image processing | Pillow | Required by Tesseract and PassportEye for normalization |
-| Passport MRZ | PassportEye + `mrz` | Deterministic MRZ band extraction — no LLM needed |
+| PDF text | PyMuPDF (`fitz`) 1.27 | Fastest pure-Python PDF text extraction; lossless; bounding-box coords for PDF annotation |
+| OCR | Tesseract via `pytesseract` 0.3 | Industry-standard OSS OCR; bundled in `tesseract_bin/`; 100+ languages in `tessdata/` |
+| Image processing | Pillow 12.2 | Required by Tesseract and PassportEye |
+| Passport MRZ | PassportEye 2.2 + `mrz` 0.6 | Deterministic MRZ band extraction — checksum-validated; no LLM needed |
 | Validation | Pydantic v2.13 | Strict typed schemas with field-level normalization |
-| Storage | SQLite (stdlib) | Zero-install, file-based, BI-friendly |
-| Vector search | ChromaDB 1.5 | Embedded, local; no separate vector DB service |
-| Tabular ops | pandas 3.0 | Excel/CSV export, dataframe transforms in UI |
-| Excel writer | openpyxl 3.1 | Required for the 49-column "Containers actifs" XLSX export |
-| Job queue | Huey 3.0 (SQLite-backed) | Lets the UI stay responsive during 100-doc batches |
-| Fuzzy matching | RapidFuzz 3.14 | Fastest Levenshtein/token-set ratio implementation in Python |
-| HTTP | requests 2.33 | Talking to the Ollama daemon |
+| Storage | SQLite (stdlib) | Zero-install, file-based, BI-friendly; WAL mode for concurrency |
+| Vector search | ChromaDB 1.5 | Embedded, local; no separate service |
+| Tabular ops | pandas 3.0 | Excel/CSV export, XLSX writer |
+| Excel writer | openpyxl 3.1 | 49-column "Containers actifs" XLSX export with French headers |
+| Fuzzy matching | RapidFuzz 3.14 | Fastest Levenshtein/token-set ratio implementation; used in `core/matching/engine.py` |
+| HTTP | requests 2.33 | Calling the Ollama daemon |
 | BI bridge | Flask 3.1 + flask-cors 5.0 | Local REST server for Power BI connections |
-| Tests | pytest 9.0 | Unit + import-rule enforcement (`tests/test_imports.py`) |
+| Tests | pytest 9.0 | `tests/test_imports.py`, `test_phase1–4`, `test_phase8` |
+| Job queue | huey 3.0 | **In requirements.txt but NOT currently used** — raw threads via `job_tracker.py` instead |
 
 ## Detailed reasoning per dependency
 
-### `streamlit==1.56.0`
-
-**Role:** Current main UI (dashboard, processing, edit forms, exports).
-
-**Why:** Streamlit lets one developer ship a working data-app in a weekend. For
-a single-developer project that needed to validate the pipeline with real
-operators before committing to a frontend stack, this was correct.
-
-**Cost of staying:** Streamlit's CSS injection model fights you on anything
-beyond the default look. Widget internals (file uploaders, sliders) resist
-deep theming. This is the reason the Flask + HTMX + DaisyUI migration is
-underway.
-
-**Replacement plan:** Phase 5 of the migration removes Streamlit from
-`requirements.txt` entirely. Until then it stays.
-
 ### `PyMuPDF==1.27.2.2` (imported as `fitz`)
 
-**Role:** Native PDF text extraction.
+**Role:** Native PDF text extraction, page rendering for OCR, PDF annotation
+for the bounding-box overlay feature (`/files/<module>/<id>/annotated`).
 
-**Why:** Five to ten times faster than pdfplumber, more accurate at preserving
-reading order than pdfminer.six, and exposes bounding-box coordinates needed
-for the future "highlight-on-PDF" verification view.
+**Why:** Five to ten times faster than pdfplumber; more accurate at preserving
+reading order than pdfminer.six; exposes bounding-box coordinates used by the
+annotated-PDF endpoint to draw field highlights.
 
-**Watch-out:** AGPL-licensed. For a closed-source commercial sale this would
-require a paid PyMuPDF Pro license. For local-install-only sale this is
-acceptable.
+**Watch-out:** AGPL-licensed. For a closed-source commercial sale this requires
+a paid PyMuPDF Pro license. For local-install-only, this is acceptable.
 
 ### `pytesseract==0.3.13` + Tesseract binary
 
 **Role:** OCR fallback for scanned PDFs and image documents.
 
 **Why:** Tesseract is the only OSS OCR with quality competitive against AWS
-Textract / Azure Form Recognizer for Latin-alphabet documents. It supports
-Arabic and French out of the box (relevant for the Algerian customer base).
+Textract for Latin-alphabet documents. It supports Arabic and French out of the
+box (relevant for the Algerian customer base).
 
-**Bundled install:** `install_tesseract.bat` (the launcher in the repo) handles
-the binary install — a major UX issue for non-technical operators.
+**Bundled install:** The `tesseract_bin/` directory contains the Windows binary.
+`tessdata/` contains language models for 100+ languages including `ara.traineddata`,
+`fra.traineddata`, `eng.traineddata`. The extractor sets `TESSDATA_PREFIX` at
+import time to point to the bundled `tessdata/`.
+
+**Known issue:** `_tesseract_available()` in `text_extractor.py` calls
+`pytesseract.get_tesseract_version()` on every OCR attempt (per page), which
+spawns a subprocess each time. Should be cached at module load. Fix is tracked
+in the roadmap.
 
 ### `Pillow==12.2.0`
 
-**Role:** Image preprocessing (binarization, deskew) before Tesseract /
-PassportEye.
+**Role:** Image preprocessing before Tesseract / PassportEye.
 
-**Why:** Hard dependency of both pytesseract and PassportEye. Cannot be
-removed.
+**Why:** Hard dependency of both pytesseract and PassportEye. Cannot be removed.
 
 ### `passporteye==2.2.2` + `mrz==0.6.1`
 
-**Role:** Locate and parse the MRZ (Machine Readable Zone) of passports and ID
-cards.
+**Role:** Locate and parse the MRZ (Machine Readable Zone) of passports and
+ID cards.
 
 **Why:** The MRZ is a fixed-format band at the bottom of every ICAO passport.
 A specialist parser is dramatically more accurate than asking an LLM to read
-it. PassportEye finds the band, the `mrz` library validates check digits and
-extracts the structured fields.
-
-**Specialist > generalist principle:** When a deterministic parser exists for
-a domain, use it instead of the LLM. Reserve the LLM for the unstructured
-visual fields (name spelling, address, etc.).
+it. PassportEye finds the band; the `mrz` library validates check digits and
+extracts structured fields. This is the "specialist > generalist" principle:
+use a deterministic parser when one exists.
 
 ### `requests==2.33.1`
 
-**Role:** HTTP client to talk to the Ollama daemon at
-`http://localhost:11434/api/generate`.
+**Role:** HTTP client to talk to the Ollama daemon at the configured endpoint.
 
 **Why:** Stable, synchronous, simple. We are not bottlenecked on HTTP — we are
-bottlenecked on LLM inference. Async would not help.
+bottlenecked on LLM inference.
 
 ### `pydantic==2.13.2`
 
-**Role:** Schema definition, validation, normalization.
+**Role:** Schema definition, input validation, field-level normalization.
 
-**Why:** Pydantic v2 (rust-backed) is faster than v1 by an order of magnitude
-and supports the `field_validator` decorator with `mode="before"`, which is
-exactly what we need to canonicalize incoming LLM output before any other
-field interacts with it.
+**Why:** Pydantic v2 (rust-backed) is faster than v1 by an order of magnitude.
+`field_validator(mode="before")` lets normalizers run before inter-field
+validators — exactly what we need to canonicalize dirty LLM output before any
+other field sees it.
 
-**Critical pattern:** Every domain field on every schema has a normalizer.
-`vessel_name` is uppercased. `container_number` is regex-checked. `etd`/`eta`
-are date-normalized. This is the contract that lets BI tools downstream
-trust the data.
+**Critical pattern:** Every domain field has a normalizer. `container_number`
+is regex-checked. Dates are ISO-normalized. Carrier names are canonicalized.
+This is the contract that makes BI tools downstream trust the data.
 
 ### `chromadb==1.5.8`
 
 **Role:** Local vector store for semantic document search.
 
-**Why:** Embedded mode (no separate daemon), good Python API, integrates
-cleanly with sentence-transformer embeddings. Lets the user search "cold-chain
-shipment from MSC arriving April" instead of `WHERE vessel LIKE '%...'`.
+**Why:** Embedded mode (no separate daemon). Every processed document is
+embedded so users can search "cold-chain shipment from MSC arriving April"
+instead of `WHERE vessel LIKE '%...'`.
 
 **Cost:** Brings in ONNX runtime and sentence-transformers as transitives —
 adds ~200MB to the install. Acceptable for a desktop app.
 
 ### `pandas==3.0.2`
 
-**Role:** Dataframe operations for UI tables, CSV export, Excel export.
+**Role:** Dataframe operations for CSV/XLSX export.
 
-**Why:** Streamlit's `st.dataframe()` and `st.download_button()` for CSV both
-expect pandas. Once you have pandas in the build, every dataframe-shaped
-operation gets cheaper.
-
-**Future:** When Streamlit goes away, evaluate dropping pandas in favor of
-sqlite3 + manual rendering. Pandas alone is ~80MB in the install.
+**Why:** The XLSX export uses pandas + openpyxl for column ordering and French
+header formatting.
 
 ### `openpyxl==3.1.5`
 
-**Role:** Generate the 49-column "Containers actifs" XLSX with column widths,
-header styling, and the exact French column names the customer's Power BI
-expects.
+**Role:** Write the 49-column "Containers actifs" XLSX with French column
+names in the exact order the customer's Power BI expects.
 
-**Why:** It's the only Python library that can produce a styled XLSX that
-Power BI's auto-detection treats correctly. CSV is easier but loses formatting.
+**Why:** Only Python library that produces a styled XLSX that Power BI's
+auto-detection treats correctly.
 
-### `huey==3.0.0`
+### `huey==3.0.0` (installed but not used)
 
-**Role:** Background job queue (SQLite-backed) for batch processing.
+**Status:** In `requirements.txt` and `core/pipeline/queue.py` exists, but
+the active upload flow uses `threading.Thread` via `core/api/job_tracker.py`.
+Huey is not started, not called, and not wired.
 
-**Why:** When a user drops 100 PDFs at once, the UI thread cannot block on
-30s × 100 of LLM inference. Huey lets the consumer process them in the
-background and the UI poll for status. SQLite-backed means no Redis
-dependency.
+**Original intent:** Background job queue (SQLite-backed) for processing 100+
+PDFs without blocking the UI thread.
 
-**Currently:** Optional. The synchronous `process_pdf_file()` path still
-exists for small batches.
+**Current reality:** In-memory thread dict in `job_tracker.py`. Huey remains
+in requirements in case the migration to a real queue is completed. See
+[09-ROADMAP-IMPROVEMENTS.md](09-ROADMAP-IMPROVEMENTS.md) N1.
 
 ### `RapidFuzz==3.14.5`
 
 **Role:** Fuzzy string matching in the identity resolution engine.
 
-**Why:** C++-backed implementation of Levenshtein and token-set ratios. ~10x
-faster than the pure-Python `fuzzywuzzy`. We compute O(N) similarity scores
-per new person against the existing person table — performance matters as the
-table grows.
+**Why:** C++-backed Levenshtein and token-set ratios. ~10x faster than
+pure-Python `fuzzywuzzy`. Used in `core/matching/engine.py`.
+
+**Current status:** `core/matching/engine.py` is complete and correct. It is
+not yet called in `projections.py` — exact SQL match is used instead. The
+RapidFuzz dependency is still necessary and correct.
 
 ### `Flask==3.1.3` + `flask-cors==5.0.1`
 
-**Role:** Local REST server for Power BI / Tableau / Looker live connections.
+**Role:** Single-process app serving both the HTML operator UI and the JSON
+REST API for Power BI.
 
-**Why:** Power BI's "Web" connector hits HTTP endpoints. Flask is the
-smallest sensible HTTP server in the Python ecosystem; flask-cors enables
-cross-origin requests so a browser-based BI tool on a different port can call
-the API.
+**Why:** Flask is the smallest sensible HTTP server in the Python ecosystem.
+flask-cors enables Power BI's browser-based fetching to cross the
+origin boundary from the BI tool to `localhost:7845`.
 
-**Future:** This same Flask process is what will host the new HTMX + DaisyUI
-UI. No second framework added — just more routes.
+**Current CORS scope:** `origins="*"` — all origins allowed on `/api/*`.
+This is wider than necessary for a localhost-only tool. Should be restricted
+to `localhost` and `127.0.0.1`. See [09-ROADMAP-IMPROVEMENTS.md](09-ROADMAP-IMPROVEMENTS.md).
 
 ### `pytest==9.0.3`
 
 **Role:** Test runner.
 
-**Why:** Standard. The killer test is `tests/test_imports.py`, which scans
-the import graph and fails CI if any module breaks the layer rules in
-[ARCHITECTURE.md](ARCHITECTURE.md). This is what stops the codebase from
-rotting.
+**Test files present:**
+- `tests/test_imports.py` — layer-rule import boundary enforcement
+- `tests/test_phase1.py` through `test_phase4.py`, `test_phase8.py` — feature tests
+- `tests/_import_scan.py`, `_third_party_scan.py`, `_dead_code_scan.py` — analysis helpers
 
 ## What's deliberately NOT in the stack
 
@@ -190,32 +172,34 @@ rotting.
 |------|---------------------|
 | FastAPI | Flask is simpler for our routes; we don't need async |
 | Postgres | SQLite is sufficient at our document volumes; a single file is operationally beautiful |
-| Redis | Huey's SQLite backend removes the need |
-| Docker | Customer base is non-technical Windows users; `.bat` launchers + `.exe` bundle is the right packaging |
-| OpenAI / Anthropic API | Local-first is a positioning pillar (see [01-OVERVIEW.md](01-OVERVIEW.md)) |
+| Redis | Huey's SQLite backend removes the need (when/if Huey is wired) |
+| Docker | Customer base is non-technical Windows users; `.bat` launchers is the right packaging |
+| OpenAI / Anthropic API | Local-first is a positioning pillar — cloud LLM is a future optional tier |
 | AWS Textract / Azure Form Recognizer | Same — also defeats the cost argument |
-| Celery | Overkill for desktop-scale concurrency; Huey is sufficient |
+| Celery | Overkill for desktop-scale concurrency |
 | React / Vue / Svelte | HTMX gives us reactivity without a build step |
-| Tailwind via npm | DaisyUI ships a CDN bundle — zero Node dependency |
-| Authentication framework | Local single-user app; multi-user is explicitly out of scope (see [09-ROADMAP-IMPROVEMENTS.md](09-ROADMAP-IMPROVEMENTS.md)) |
+| Tailwind via npm | DaisyUI CDN bundle — zero Node dependency (offline offline-mode gap: see roadmap) |
+| Authentication framework | Local single-user app; multi-user is explicitly deferred |
+| Streamlit | Fully removed. `START_APP.bat` now starts Flask directly. |
 
 ## Hidden non-Python dependencies
 
 These are NOT in `requirements.txt` but the app needs them:
 
-1. **Tesseract OCR binary** — installed via `install_tesseract.bat` from the
-   UB-Mannheim Windows build. Path is auto-detected from the registry.
-2. **Ollama** — installed via the Ollama Windows installer. Default
-   `localhost:11434`. The user must run `ollama pull llama3` once.
+1. **Tesseract OCR binary** — bundled in `tesseract_bin/`. If missing, the
+   app falls back to Ollama vision. Install via `install_tesseract.bat` if
+   needed.
+2. **Ollama** — installed via the Ollama Windows installer. After install:
+   ```cmd
+   ollama pull llama3
+   ```
 3. **Visual C++ Redistributable** — required by ChromaDB's ONNX runtime.
    Bundled with most modern Windows installs.
 
-## Why Python 3.11+
+## Python version
 
-- Pydantic v2's `Annotated` patterns work cleanly only on 3.11+.
-- `match` statements in the pipeline router (Python 3.10+).
-- Walrus operator (`:=`) used in `core/pipeline/processor.py` for streaming
-  hash chunks (Python 3.8+ but combined with the above).
-
-3.12 is preferred. 3.13 has not been validated against the ChromaDB ONNX
-combination at time of writing.
+The project currently runs on Python 3.14 (evidenced by `cpython-314` cache
+files). Pydantic v2 requires 3.8+; walrus operator (`:=`) in `processor.py`
+requires 3.8+. No features beyond the standard library 3.10+ are known to be
+required. The official minimum is **Python 3.11** to ensure Pydantic v2
+`Annotated` patterns work cleanly.

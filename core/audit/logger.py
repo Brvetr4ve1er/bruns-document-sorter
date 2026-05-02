@@ -1,6 +1,9 @@
+import logging
 import sqlite3
 import json
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 def log_action(
     db_path: str,
@@ -33,8 +36,8 @@ def log_action(
         conn.commit()
     except sqlite3.OperationalError as e:
         if "no such table" in str(e):
-            # If audit_log doesn't exist yet, we silently ignore or log to stdout
-            print(f"Warning: could not write audit log, table missing in {db_path}")
+            # audit_log not yet created (fresh DB before init_schema) — non-fatal
+            log.warning("could not write audit log, table missing in %s", db_path)
         else:
             raise e
     finally:

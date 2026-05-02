@@ -1,324 +1,534 @@
 # 09 — Roadmap and Improvements
 
-This is the engineering roadmap and the candid critique of what's currently
-weak in the platform. Read it as a working document, not a marketing
-roadmap — items are ordered by *honest* priority, not by what sells.
-
-## Done (April 2026)
-
-### ✅ Streamlit → Flask + HTMX + DaisyUI migration
-
-| Phase | Scope | Status |
-|-------|-------|--------|
-| P1 | Flask HTML routes for read-only dashboard, DaisyUI 31-theme picker + HTMX via CDN | **Done** |
-| P2 | `/upload` POST + `/process-status/<job_id>` HTMX polling, in-memory `job_tracker.py` | **Done** |
-| P3 | Edit + Export + Settings + LLM-config modal as HTMX dialog | **Done** |
-| P4 | Travel mode parity (Dashboard / Upload / Persons / Families / Documents) | **Done** |
-| P5 | Streamlit decommissioned. Single-process Flask app on port 7845. | **Done** |
-
-The codebase no longer contains `app.py` (root), `logistics_app/`, `travel_app/`,
-`ui/`, `.streamlit/`, or `_legacy/`. All UI lives under `core/api/templates/`.
-Test `tests/test_imports.py` enforces that nothing imports any of these
-deleted package names ever again (they are listed as `GHOST_TARGETS`).
-
-Path consolidation also done: `data/` is now the single home for
-`logistics.db`, `travel.db`, `input/`, `logs/`, `exports/`, and the
-hidden config files (`.llm_config.json`, `.launcher_prefs.json`).
-
-### Active: This wiki
-
-Everything in `docs/` is being kept current with the Flask architecture.
+This is the engineering roadmap and a candid critique of what's currently
+weak. Read it as a working document, not a marketing roadmap — items are
+ordered by honest priority, not by what sells.
 
 ---
 
-## Next (June–August 2026)
+## Done
 
-### N1 — In-memory `JobTracker` persistence
+### ✅ Streamlit → Flask + HTMX + DaisyUI migration
 
-P2 of the migration introduces `core/api/job_tracker.py` — an in-memory
-dict[str, Job]. **Problem:** restart the server, lose all in-flight jobs.
+`START_APP.bat` starts the Flask server on port 7845. Streamlit is fully
+removed. All HTML routes, job tracking, upload + polling, edit forms, export,
+settings, and LLM config modal are in `core/api/server.py` + `core/api/templates/`.
 
-Improvement: back the tracker with `data/queue.db` (already a SQLite file in
-the project for Huey). On startup, hydrate any incomplete jobs and resume.
+### ✅ Flask BI bridge (Power BI REST)
 
-Effort: ~1 day. Benefit: production-ready upload UX.
+`/api/logistics/shipments_full` is live. Power BI connects in 3 clicks.
 
-### N2 — Apache Parquet export endpoint
+### ✅ Operator action center (P1-A)
+
+4-card action strip on the dashboard: review queue count, D&D at-risk
+containers, data gaps, on-track count. Each card links to a pre-filtered view.
+
+### ✅ Three-tier confidence routing (P1-B)
+
+Documents routed by confidence: ≥ 0.90 auto-approved, 0.60–0.89 review queue,
+< 0.60 needs attention. The `/logistics/review` queue surfaces the specific
+low-confidence field and score. Operators can approve from the queue.
+
+### ✅ Re-extract with before/after diff (P1-C)
+
+"Re-extract" button on document detail runs the current prompt on the stored
+source file and shows a three-column diff (added / changed / removed). Nothing
+is saved until the operator accepts. Implemented as a modal with HTMX.
+
+### ✅ Activity feed from audit_log (P1-D)
+
+Last 20 audit actions rendered on the logistics dashboard sidebar.
+`audit_log` table fully populated by uploads, edits, and review approvals.
+
+### ✅ URL-based filter state + share button (P1-E)
+
+All dashboard/sheet/document-list filters are GET params. A "🔗 Share" button
+copies the current URL. Colleagues open the same filtered view instantly.
+
+### ✅ Bounding box field visualization (P2-A)
+
+Source PDF rendered with PyMuPDF highlight annotations showing where each
+extracted value was found. Color-coded by field type (TAN = blue, container =
+green, vessel = orange, etc.). Clicking any field label on the right panel
+highlights it on the left PDF. Page navigation included.
+
+### ✅ Natural-language query — "Ask your data" (P2-B)
+
+Search bar on the logistics dashboard accepts French or English plain text.
+Ollama converts it to a SQLite SELECT, which runs locally. Results shown as a
+table with the SQL disclosed below it. Safety gate blocks non-SELECT responses.
+
+### ✅ Demurrage & Detention calculator (P2-C)
+
+Per-container D&D risk level and USD/DZD cost estimate. Tiered rate tables
+derived from a real CMA-CGM BL clause (15 free days, then $20–$110/day
+depending on size and bracket). Progress bar in container detail view.
+Risk color-coding in swimlane cards.
+
+### ✅ Cross-document reconciliation (P2-D)
+
+Document detail page queries all other documents sharing the same TAN and
+flags: vessel name inconsistency, ETD/ETA divergence, container numbers absent
+in some docs, gross weight difference > 5%. Discrepancies shown with per-doc
+values and severity (warning / error).
+
+### ✅ Container status swimlane (P2-E)
+
+Visual pipeline at `/logistics/swimlane` grouped by status column
+(BOOKED → IN_TRANSIT → ARRIVED → DELIVERED → RESTITUTED → CLOSED).
+D&D risk shown as card border color. Clicking a card goes to container detail.
+
+### ✅ Arabic OCR fallback (P2-F)
+
+`core/extraction/text_extractor.py` detects Arabic Unicode in the first OCR
+pass (fra+eng) and re-runs with `ara+fra+eng` if Arabic characters are found
+or yield is below 40 characters. Bundled `tessdata/ara.traineddata` is used.
+
+### ✅ Semantic document search via ChromaDB (P2-G)
+
+`/logistics/documents` has a "🧠 Semantic" checkbox. When active, ChromaDB
+cosine-similarity search is used instead of SQL LIKE matching. Falls back
+gracefully to LIKE if the vector index is empty.
+
+### ✅ Travel mode — full case management (P3-A through P3-E)
+
+- **P3-A Expiry heatmap calendar** (`/travel/calendar`): 12-month grid heat-coded
+  by expiry density, click to drill into any month's expiring documents.
+  Expired documents surface in a separate red banner.
+- **P3-B Family completeness gate**: per-member required-docs checklist
+  (role-aware: head / spouse / child). Advance to IN_REVIEW is blocked until
+  completeness = 100%.
+- **P3-C Case status flow**: `COLLECTING → READY → IN_REVIEW → SUBMITTED →
+  APPROVED / REJECTED` with specific blocker messages.
+- **P3-D Family ZIP export**: one-click ZIP at `/travel/families/<id>/export`
+  with source files organised by member, a CSV summary, and a family info file.
+- **P3-E Next action + deadline**: free-text next-step field and date on family
+  detail page, surfaced on family cards.
+
+### ✅ Global hybrid search (P4-A)
+
+`/search` accepts plain text, queries both logistics documents and travel
+persons/families/documents by keyword + ChromaDB semantic similarity.
+Integrated search input in the nav bar; keyboard shortcut `/` focuses it.
+
+### ✅ Print-to-PDF (P4-B)
+
+`@media print` CSS strips navigation, modals, and buttons; collapses glass
+effects to white backgrounds; prevents page-break splits on tables and cards.
+Every page has a "🖨 Print PDF" button.
+
+### ✅ Keyboard shortcuts (P4-C)
+
+`/` → focus global search, `?` → shortcuts overlay, `Esc` → close modal,
+`D` → Dashboard, `U` → Upload, `A` → Analytics. Mode-aware: logistics adds
+`R` (Review), `P` (Pipeline); travel adds `C` (Calendar), `F` (Families).
+
+### ✅ Logistics analytics page (P5-A)
+
+`/logistics/analytics` — Chart.js bar and line charts: container status mix,
+top carriers by volume, shipments per month, average ETD→ETA transit time per
+carrier. "🖨 Print PDF" button included.
+
+### ✅ Travel analytics page (P5-B)
+
+`/travel/analytics` — Chart.js doughnut and bar charts: case status
+distribution, document type mix, top nationalities, 12-month expiry timeline.
+
+### ✅ Low-confidence review queue
+
+`/logistics/review` lists all documents below the 0.90 auto-approval threshold
+that haven't been reviewed. Shows confidence score and which fields drove the
+score down. "✓ Approve" button marks the document reviewed and logs it.
+
+---
+
+## Tech debt status (all P0–P3 items closed; P4–P12 closed except TD8 phase 2 + TD10)
+
+| ID | Item | Status |
+|----|------|--------|
+| TD1 | Dual schema definitions (shipments DDL) | ✅ FIXED — `db.py` aligned with live schema |
+| TD2 | Dead-code directories | ✅ DONE — `logistics_app/ ui/ database_logic/ utils/` deleted |
+| TD3 | Migrations stub | ✅ DONE — 5 migrations, idempotent, runs on startup |
+| TD4 | SQLite connection leak | ✅ FIXED — `processor.py` uses `try/finally` |
+| TD5 | Fuzzy matching not wired | ✅ DONE — `projections.py` uses `resolve_identity` |
+| TD6 | Tesseract subprocess per page | ✅ FIXED — module-level cache |
+| TD7 | NL2SQL safety gate insufficient | ✅ HARDENED — forbidden keywords, no chaining, query_only |
+| TD8 | server.py god file | 🟡 PHASE 1 DONE — 9 business modules extracted (-23% LOC, 3063→2368). Phase 2 (blueprints) deferred |
+| TD9 | CORS wide open | ✅ FIXED — localhost-only, env-overridable |
+| TD10 | No CSRF | ⚠️ DEFERRED until multi-user auth (L2) |
+| TD11 | UI assets from CDN | ✅ DONE — tailwind/daisyui/htmx/chart.js vendored to `core/api/static/` |
+| TD12 | Unstructured print() logging | ✅ DONE — `RotatingFileHandler` at `data/logs/bruns.log` |
+| N5 | free_days from extracted docs | ✅ DONE — overrides carrier defaults via `free_days_from_documents` |
+
+The historical detail of each item follows. They're kept for traceability —
+the actual current state is in the table above.
+
+### TD1 — Dual schema definitions (✅ fixed)
+
+`core/storage/db.py::init_schema()` creates `shipments` with columns `carrier`,
+`doc_type`, and `vessel`. The live `logistics.db` was created by
+`database_logic/database.py` which uses `compagnie_maritime`, `document_type`,
+and `vessel`. `server.py` and `projections.py` query the **legacy names**.
+
+**Effect:** `init_schema()` from `core/storage/db.py` creates a DB that the
+server cannot use. A fresh install on a new machine breaks immediately.
+
+**Partial fix applied:** `documents` DDL in `core/storage/db.py` was updated to
+include `reviewed_at TEXT` and `reviewed_by TEXT`. The `families` DDL was
+updated to include `case_status`, `next_action`, `next_action_date`. The
+`documents_travel` DDL was updated to include `original_doc_id`.
+
+**Remaining:** The `shipments` table DDL in `core/storage/db.py` still uses
+`carrier` / `doc_type` instead of `compagnie_maritime` / `document_type`. Fix:
+
+```sql
+CREATE TABLE IF NOT EXISTS shipments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tan TEXT UNIQUE,
+    item_description TEXT,
+    compagnie_maritime TEXT,
+    port TEXT,
+    transitaire TEXT,
+    vessel TEXT,
+    etd TEXT,
+    eta TEXT,
+    document_type TEXT,
+    status TEXT,
+    source_file TEXT,
+    created_at TEXT,
+    modified_at TEXT
+)
+```
+
+**Effort:** 30 minutes.
+
+### TD2 — Dead code directories still exist
+
+`logistics_app/`, `database_logic/`, and `ui/` are the pre-migration Streamlit
+era. They are not imported by any active `core/` code, but they sit in the
+repo and confuse onboarding. `database_logic/database.py` is still the
+authoritative schema source for the live DB, but only by accident — it should
+be replaced by the fixed `core/storage/db.py`.
+
+**Fix:** Delete `logistics_app/`, `ui/`, and migrate `database_logic/` schema
+into `core/storage/db.py` as part of TD1 completion. Then delete `database_logic/`.
+
+**Effort:** 1 hour after TD1 is fixed.
+
+### TD3 — `migrations.py` body is empty (CRITICAL for schema changes)
+
+`core/storage/migrations.py::run_migrations()` contains only comments and `pass`.
+All schema changes since launch have been applied with manual ALTER TABLE
+statements run once. The next schema change will require manual intervention
+on every deployed instance.
+
+**Fix:** Implement the migration runner with a `schema_version` table:
+```python
+MIGRATIONS = [
+    ("001_add_reviewed_fields",
+     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS reviewed_at TEXT; "
+     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS reviewed_by TEXT"),
+    ("002_add_families_case_fields",
+     "ALTER TABLE families ADD COLUMN IF NOT EXISTS case_status TEXT DEFAULT 'COLLECTING'; "
+     "ALTER TABLE families ADD COLUMN IF NOT EXISTS next_action TEXT; "
+     "ALTER TABLE families ADD COLUMN IF NOT EXISTS next_action_date TEXT"),
+    ("003_add_original_doc_id",
+     "ALTER TABLE documents_travel ADD COLUMN IF NOT EXISTS original_doc_id INTEGER"),
+    ("004_add_indexes",
+     "CREATE INDEX IF NOT EXISTS idx_docs_module ON documents(module); "
+     "CREATE INDEX IF NOT EXISTS idx_shipments_eta ON shipments(eta); "
+     "CREATE INDEX IF NOT EXISTS idx_containers_status ON containers(statut_container)"),
+]
+```
+
+**Effort:** Half a day.
+
+### TD4 — SQLite connection leaked on pipeline exception (CRITICAL)
+
+In `core/pipeline/processor.py::process_file()`, `conn.close()` is inside the
+`try` block at line 134. If any exception fires before that line, the connection
+is never closed. Under load (many failing documents), this exhausts file handles.
+
+**Fix:** Move to `finally`:
+```python
+conn = None
+try:
+    conn = get_connection(self.db_path)
+    # ... processing ...
+    conn.close()
+except Exception as e:
+    job.fail(str(e))
+finally:
+    if conn:
+        try: conn.close()
+        except: pass
+```
+
+**Effort:** 10 minutes.
+
+### TD5 — Fuzzy identity matching engine built but not wired
+
+`core/matching/engine.py` is complete and correct (RapidFuzz, weighted
+name/DOB/nationality scoring, AUTO_MERGE/REVIEW/NEW_IDENTITY thresholds).
+`projections.py` uses `WHERE normalized_name = ?` instead. Name variations
+create duplicate person rows silently.
+
+This is the Travel module's core differentiator. It is complete code sitting
+unused. See `docs/02-HOW-IT-WORKS.md` Step 6 for the wiring recipe.
+
+**Effort:** 1 day.
+
+### TD6 — `_tesseract_available()` spawns subprocess per page
+
+For a 20-page scanned PDF, 20 `tesseract --version` subprocesses are spawned.
+No module-level cache exists. The `_TESSERACT_AVAILABLE` pattern shown in
+previous planning was never applied.
+
+**Fix:**
+```python
+_TESSERACT_AVAILABLE: bool | None = None
+
+def _tesseract_available() -> bool:
+    global _TESSERACT_AVAILABLE
+    if _TESSERACT_AVAILABLE is None:
+        try:
+            import pytesseract; pytesseract.get_tesseract_version()
+            _TESSERACT_AVAILABLE = True
+        except Exception:
+            _TESSERACT_AVAILABLE = False
+    return _TESSERACT_AVAILABLE
+```
+
+**Effort:** 10 minutes.
+
+### TD7 — NL2SQL safety gate is insufficient
+
+The check `if not sql_upper.startswith("SELECT")` is bypassable:
+`SELECT 1; DROP TABLE containers;` passes. No forbidden keyword list, no
+`PRAGMA query_only` connection constraint.
+
+**Fix:**
+```python
+FORBIDDEN = ("INSERT","UPDATE","DELETE","DROP","CREATE","ALTER",
+             "ATTACH","DETACH","PRAGMA","VACUUM","TRUNCATE")
+if any(kw in sql.upper().split() for kw in FORBIDDEN):
+    return error_fragment("Forbidden keyword in generated SQL")
+conn = get_connection(LOGISTICS_DB)
+conn.execute("PRAGMA query_only = ON")
+cursor = conn.execute(sql)
+```
+
+**Effort:** 2 hours.
+
+### TD8 — `server.py` is ~3 000 LOC god file
+
+**Current size: 3 063 LOC** (was ~1 700 in previous docs — grew by 1 300+ lines
+across the improvement sessions). All Flask routes, business logic (demurrage
+calculation, family completeness, NL2SQL, reconciliation, chart data),
+file serving, and inline SQL live in one file.
+
+**Fix:** Decompose into Flask blueprints:
+```
+core/api/blueprints/
+    logistics.py    # /logistics/* routes
+    travel.py       # /travel/* routes
+    api.py          # /api/* JSON endpoints
+    llm.py          # /llm/* config
+    files.py        # /files/* serving + annotation
+    search.py       # /search
+```
+Move all SQL into `core/storage/repository.py`. Move business logic into
+`core/` submodules.
+
+**Effort:** 3–4 days.
+
+### TD9 — CORS is wide open
+
+`CORS(app, resources={r"/api/*": {"origins": "*"}})` — any web page can read
+the logistics database over the LAN.
+
+**Fix:**
+```python
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:*", "http://127.0.0.1:*"]}})
+```
+
+**Effort:** 5 minutes.
+
+### TD10 — No CSRF on state-changing endpoints
+
+HTMX POST endpoints (upload, edit, family status update, clear input, purge
+jobs) have no CSRF protection. A malicious page in the same browser can POST
+to them cross-origin.
+
+**Fix:** Add `flask-wtf` and inject CSRF token via `hx-headers`.
+
+**Effort:** Half a day.
+
+### TD11 — Tailwind and DaisyUI loaded from CDN
+
+The app markets itself as offline-capable but loads ~300 KB of CSS/JS from
+external CDNs on every page load. Port offices with no internet get blank UI.
+
+**Fix:** Download and serve from `core/api/static/`:
+```bash
+curl https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css \
+  -o core/api/static/daisyui.min.css
+curl https://unpkg.com/htmx.org@2.0.3 -o core/api/static/htmx.min.js
+curl https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js \
+  -o core/api/static/chart.min.js
+# Tailwind: use the standalone CLI or pre-built CDN build
+```
+Update `base.html` + analytics templates to reference `{{ url_for('static', ...) }}`.
+
+**Effort:** 1 hour.
+
+### TD12 — No structured logging
+
+All application logging uses `print()`. No log levels, no file output, no
+correlation with job IDs or request IDs.
+
+**Fix:** Replace `print()` with `logging.getLogger(__name__)` calls throughout
+`core/`. Configure a `RotatingFileHandler` writing to `data/logs/bruns.log`.
+
+**Effort:** Half a day.
+
+---
+
+## Next features (June–August 2026)
+
+### N1 — Wire fuzzy identity matching (Travel) ⭐ most urgent
+
+Described in TD5. The matching engine is complete. Every duplicate person
+row is a real business failure. This is the #1 feature gap.
+
+**Effort:** 1 day.
+
+### N2 — Implement schema migrations
+
+Described in TD3. Without this, any schema change on a deployed instance
+requires manual SQL. Unacceptable for a product being sold to operators.
+
+**Effort:** Half a day.
+
+### N3 — Apache Parquet export endpoint
 
 `/api/logistics/shipments_full.parquet` — 10× faster ingest into Power BI
-than JSON pagination at >10k rows.
+than JSON pagination. `pyarrow` is already a transitive dep.
 
-Effort: ~half day (pyarrow already a transitive dep via pandas).
-Customer ask: yes, repeated.
+**Effort:** Half a day.
 
-### N3 — Computed BI columns moved into a SQL VIEW
+### N4 — Pre-computed analytics API
 
-Today the 49-column shape is computed at query time in
-`core/api/server.py::logistics_shipments_full`. As the customer adds custom
-columns, the SQL grows.
+`/api/analytics/kpis?period=90d` calculating standard logistics KPIs
+server-side. Reduces Power BI DAX formula requirement to near-zero.
 
-Improvement: define a SQLite VIEW `containers_actifs_export` that does the
-JOIN + computed columns in pure SQL. The Flask route becomes a one-liner.
+**Effort:** 2 days.
 
-Benefit: the same view can be queried directly by Power BI's SQLite
-connector for offline use.
+### N5 — Demurrage free days from extracted documents
 
-Effort: ~1 day.
+The LLM prompt already extracts `free_days` and `demurrage_terms` from
+booking confirmations. `_demurrage_info()` ignores them and uses hardcoded
+carrier defaults. Wire them:
+```python
+doc_free_days = json.loads(doc_row["extracted_json"] or "{}").get("free_days")
+free_days = int(doc_free_days or 0) or _DEFAULT_FREE_DAYS.get(carrier, 14)
+```
 
-### N4 — Demurrage risk computation
+**Effort:** 2 hours.
 
-`/api/logistics/risk/demurrage` — for every active container, compute
-predicted exposure based on `etd → today` and historical carrier delay
-distributions.
+### N6 — Arrival Notice document type
 
-Math: for each carrier, learn `lambda` (avg delay days) from historical
-shipments. For active container `c`, predict `delay = poisson(lambda_carrier)`.
-Compute `exposure = max(0, predicted_arrival + dwell_avg - free_days) * rate_per_day`.
+Add `ARRIVAL_NOTICE` to logistics prompts. Extract `date_avis_arrivee` and
+use it as the demurrage clock start instead of `eta`. This makes all demurrage
+calculations accurate (currently off by the port processing lag).
 
-Effort: ~3 days. Marketing impact: high — this is a "wow demo" feature.
+**Effort:** 1 day.
 
-### N5 — LLM client fallback to cloud (premium tier)
+### N7 — Exception / alert dashboard widget
 
-`core/extraction/llm_client.py` exposes a `LLMClient` interface. Today there
-is one implementation (Ollama). Add:
+Surface approaching demurrage (< 3 days free), missing BOL, customs overdue,
+and containers without a delivery date as a dedicated view. All data already
+exists — only the UI surface is missing.
 
-- `OpenAIClient` (uses `OPENAI_API_KEY` env var)
-- `AnthropicClient` (uses `ANTHROPIC_API_KEY`)
+**Effort:** 2 days.
 
-Routing logic: try local Ollama first (free). On failure / low confidence,
-escalate to cloud (paid). Audit log records which provider answered.
+### N8 — Cloud LLM fallback (premium tier)
 
-Why: enables the "premium accuracy" tier without touching local-first
-positioning for the base product.
+Add `OpenAIClient` and `AnthropicClient` subclasses of `LLMClient`. On local
+Ollama failure or confidence < 0.60, escalate to cloud. Audit log records
+which provider answered.
 
-Effort: ~2 days.
+**Effort:** 2 days.
 
 ---
 
 ## Later (Sep–Dec 2026)
 
-### L1 — Human-in-the-loop review UI
+### L2 — Multi-user auth
 
-Today the matcher's `REVIEW` status (0.60–0.85 score) is surfaced but the
-UI for resolving the conflict is rudimentary. Build:
-
-- Side-by-side comparison of new vs candidate person
-- Highlight which fields matched, which didn't, with the breakdown scores
-- Single-click merge / new-identity buttons
-- Undo within 30 seconds (toast-based)
-
-Effort: ~3 days once Flask UI is the substrate.
-
-### L2 — Bounding-box overlay on the PDF
-
-`PyMuPDF` already exposes word-level bounding boxes. Overlay the extracted
-field on the original PDF as a yellow highlight, click-to-jump from the
-extracted-data panel to the PDF location.
-
-This is the "verification time → seconds" feature mentioned in the README's
-roadmap. It's also a killer demo.
-
-Effort: ~3–5 days. Touches PDF rendering in the Flask UI.
+Basic auth at Flask layer. `reviewed_at` / `modified_by` columns finally
+fillable by named users. Role split: `viewer` / `operator` / `admin`.
 
 ### L3 — OData v4 endpoint
 
-Power BI / Excel have first-class OData connectors (better than the generic
-"Web" connector — pagination, filtering, schema discovery handled
-automatically).
+Power BI and Excel have first-class OData connectors (automatic pagination,
+filtering, schema discovery).
 
-`/api/logistics/odata/$metadata` + `/api/logistics/odata/Shipments?$filter=...`
+### L4 — Healthcare domain plug-in
 
-Effort: ~5 days. There's a `flask-odata` package but it's stale; might
-need a hand-rolled implementation.
-
-### L4 — Multi-user auth (deferred — only if multi-tenant)
-
-Currently single-user. If we ever sell to teams of 5+ on shared install:
-
-- Basic auth at the Flask layer, password hashing in `data/auth.db`.
-- Per-user audit log entries (`Modifié par` column finally fillable).
-- Role split: `viewer` / `operator` / `admin`.
-
-Effort: ~5 days. Deliberately deferred — most customers are single-operator.
-
-### L5 — Healthcare domain plug-in (proof of platform claim)
-
-Implements `modules/healthcare/` as a forcing function for the "1 day per
-new domain" target. Likely first stab at a referral letter parser.
-
-Effort: ~7 days for the first version, less if the Phase-1 architectural
-hardening lands first.
+`modules/healthcare/` as a forcing function for the "1 day per new domain"
+target.
 
 ---
 
-## Tech debt and architectural critique
+## Bugs fixed during development sessions
 
-### TD1 — Two parallel pipelines exist
+These were live bugs caught during development and patched immediately:
 
-`logistics_app/app.py::process_pdf_file()` and
-`core/pipeline/processor.py::PipelineProcessor.process_file()` are two
-implementations of the same flow. The first is what Streamlit calls today.
-The second is the cleaner, OOP, cache-aware version intended to be the
-single path.
-
-**Resolution:** Phase 5 of the UI migration kills Streamlit, which kills
-the first implementation. Until then they co-exist. Risk: a fix made in one
-doesn't propagate to the other. Mitigation: make the wrapper trivial — the
-Streamlit version should just call the Pipeline.
-
-Priority: medium (becomes irrelevant after P5).
-
-### TD2 — Schema is duplicated between Pydantic and SQLite
-
-`core/schemas/logistics.py::Container` (Pydantic) and the `containers` table
-(SQL DDL in `core/storage/migrations.py`) are hand-kept in sync. Adding a
-field requires touching two places.
-
-**Resolution options:**
-- (a) Generate SQL from Pydantic via SQLModel — adds a dep, changes the
-  storage layer significantly.
-- (b) Add a test that scans both definitions and fails CI on mismatch.
-
-(b) is the right call. Effort: 1 day. Priority: medium-high — prevents real
-bugs.
-
-### TD3 — `_legacy/` and the dual `app.py` confusion
-
-There's `app.py` at root (new mode-selector entry point), `logistics_app/app.py`
-(monolithic Streamlit), and a `_legacy/` directory. New contributors get
-confused about which file to read.
-
-**Resolution:** After P5, delete `logistics_app/app.py` and `_legacy/`.
-Document in the wiki. Progress on this is unblocked by the Flask migration.
-
-Priority: low (it's confusing but not actively breaking things).
-
-### TD4 — No CI / no automated test runs
-
-`tests/` exists with `test_imports.py` (the layer-rule enforcer) but nothing
-runs it on commit. The single developer must remember to `pytest` before
-pushing.
-
-**Resolution:** Add a `.github/workflows/ci.yml` that runs `pytest -v` on
-every push. Effort: 30 minutes. Priority: high — catches the import-rule
-violations that cause the dual-pipeline mess.
-
-### TD5 — Settings persistence is scattered
-
-UI settings live in `data/ui_settings.json`. App settings in
-`data/.launcher_prefs.json`. Onboarding state inline in `logistics_app/app.py`.
-Three different storage patterns for "user preferences."
-
-**Resolution:** A single `core/config/preferences.py` with one read, one
-write, typed via a Pydantic model. Migrate the three sources during P5.
-
-Effort: 1 day. Priority: low until P5.
-
-### TD6 — Flask server has no error envelope
-
-Routes return `jsonify(...)` directly. On exception, Flask returns the
-default 500 HTML. BI tools don't handle this gracefully.
-
-**Resolution:** Add an error handler that always returns
-`{"error": "...", "code": "..."}` JSON, even on 500. Standard Flask
-`@app.errorhandler(Exception)`.
-
-Effort: 1 hour. Priority: high (cheap, catches real BI tool bugs).
-
-### TD7 — No structured logging
-
-`core/audit/logger.py` writes per-file JSON files. The Flask server does
-`print()`. There's no unified log stream a sysadmin could `tail`.
-
-**Resolution:** Adopt `structlog` (already a transitive dep), pipe everything
-to `data/logs/app.jsonl` in JSONL format. Per-file audit logs stay (they're
-the case-file evidence trail for Travel module).
-
-Effort: half day. Priority: medium.
+| Bug | File | Fix |
+|-----|------|-----|
+| `disc.values` resolved to Python's built-in `dict.values()` method in Jinja2, causing 500 on any document with TAN siblings | `document_detail.html:222` | Changed to `disc['values'].items()` |
+| `reviewed_at` / `reviewed_by` columns queried but not in schema DDL | `core/storage/db.py` | Added to `documents` CREATE TABLE |
+| `families` table missing `case_status`, `next_action`, `next_action_date` in DDL | `core/storage/db.py` | Added to `families` CREATE TABLE |
+| `documents_travel` missing `original_doc_id` in DDL | `core/storage/db.py` | Added to `documents_travel` CREATE TABLE |
+| Chart.js infinite growth loop on analytics pages | `logistics/analytics.html`, `travel/analytics.html` | Wrapped each `<canvas>` in `<div class="relative h-64">` to give Chart.js a fixed-height parent |
+| Multiple stale Flask processes accumulating on port 7845 (Windows) | `START_APP.bat` | Kill existing process before starting: `for /f "tokens=5" %a in ('netstat -aon ^| findstr :7845') do taskkill /F /PID %a` |
 
 ---
 
-## Insights from analyzing the codebase
-
-These are observations that don't slot neatly into "roadmap" or "tech debt"
-but matter for product direction:
+## Insights that drive product direction
 
 ### Insight 1 — The Excel format IS the API
 
-The 49-column "Containers actifs" XLSX is not a quaint legacy artifact. It
-is the *integration contract* with the customer's existing Power BI report.
-Treating it as a first-class output (not a "simpler alternative" to the
-REST API) clarifies a lot:
+The 49-column "Containers actifs" XLSX is the integration contract with the
+customer's Power BI. Schema changes that break the XLSX shape must be versioned.
+New computed columns live in the export layer, not the database.
 
-- Schema changes that break the XLSX shape must be versioned carefully.
-- New computed columns added by customers should live in the XLSX export
-  layer, not the database.
-- The XLSX writer should arguably be a separate microservice some day —
-  it's the most-touched output and the most fragile.
+### Insight 2 — Cache hit rate is the real operational KPI
 
-### Insight 2 — The cache hit rate is the real KPI
+A high cache hit rate means the operator is re-uploading the same files —
+which is fine and instant. Expose this in the dashboard settings page.
 
-A clerk who re-uploads the same 50 PDFs at end of week is a feature, not a
-bug. Cache hits = instant feedback = happy clerk. The first metric to
-expose in the UI dashboard should be "cache hit rate this week."
+### Insight 3 — Fuzzy identity resolution is the Travel module's moat
 
-### Insight 3 — Identity resolution is the moat (Travel module)
+OCR + LLM is commoditized. What is not commoditized is catching "Mohammed
+AbdelKader b. 1985-03-12" = "Mohammed Abdul-Khader" on case #4521 from 2 years
+ago. The matching engine is complete. Wire it.
 
-OCR + LLM is commoditized. What is NOT commoditized is the fuzzy matcher
-that figures out "this passport for Mohammed AbdelKader b. 1985-03-12 is
-the same person as the Mohammed Abdul-Khader on case #4521 from 2 years
-ago." This is the feature that makes the Travel module sticky. Invest more
-here.
+### Insight 4 — Local-first is a 5-year posture
 
-### Insight 4 — Local-first is a 5-year posture, not a fad
-
-The trend in MENA enterprise software is *toward* on-prem and local-first,
-not away from it. Data sovereignty laws (Algeria's Loi 18-07, similar in
-Morocco and Tunisia) make cloud-first SaaS structurally disadvantaged.
-Don't dilute the local-first positioning for short-term sales.
+Data sovereignty laws (Algeria's Loi 18-07, Morocco, Tunisia) make cloud-first
+SaaS structurally disadvantaged in the primary target market. Don't dilute it.
 
 ### Insight 5 — The competitor is the clerk, not other software
 
-Every customer has a clerk doing this manually today. The pitch is never
-"better than competitor X" — it's "stop paying €600/mo for typing." Every
-piece of marketing collateral should center on this.
+The pitch is "stop paying €600/mo for typing." Not "better than Nanonets."
 
-### Insight 6 — French language is non-trivial
+### Insight 6 — French language is a moat
 
-Every prompt, every UI string, every export column is in French. This is a
-moat against US/UK competitors who would need a localization pass. It is
-also a constraint: the LLM has to handle French + technical terms (CNE,
-PON, MARKS AND NUMBERS) gracefully. Spend time on prompt translation and
-testing.
-
-### Insight 7 — The Flask BI bridge is the most under-marketed feature
-
-We have a live REST API that Power BI connects to in 3 clicks. This is the
-killer feature for the BI consultancy ICP. The README mentions it as
-"future roadmap" — it's already built. Update the README.
-
-(Action item for this Claude session: noted, will be cross-referenced.)
-
-### Insight 8 — Two AI sessions on the same codebase is a real risk
-
-Currently active: this session writing docs, parallel session migrating the
-UI. The git status already shows file moves and renames. Without
-coordination protocol:
-
-- Imports break in unpredictable ways.
-- Refactors collide.
-- Both sessions claim the work is done while integration is broken.
-
-Suggested protocol (informal):
-- Owner-of-area declared at session start (e.g., "this session owns
-  `docs/` and never touches `core/`").
-- Before any file move/rename, one session checks the other isn't
-  currently editing it.
-- A coordination note (`COORDINATION.md` or similar) at root tracks active
-  workstreams.
-
-This is not a software problem; it's a workflow problem. Worth explicit
-attention.
+Every prompt, UI string, and export column is in French. US/UK competitors need
+a localization pass. The LLM handles French + technical terms (CNE, PON, MARKS
+AND NUMBERS) gracefully because the prompt teaches it.
 
 ---
 
@@ -326,9 +536,8 @@ attention.
 
 | Idea | Why not |
 |------|---------|
-| Mobile app | The buyer uses a Windows laptop. Mobile is a distraction. |
-| Multi-tenant SaaS | Conflicts with local-first positioning. |
-| Email ingestion (auto-fetch carrier emails) | Mentioned in old README but security blast radius is huge. Defer indefinitely. |
-| Generic document QA chatbot | Not the product. |
-| Custom LLM training | Llama3 + good prompts is sufficient. Custom training is a $$$ rabbit hole. |
-| Marketplace of community-contributed prompts | Premature; we have ~5 customers. |
+| Mobile app | The buyer uses a Windows laptop |
+| Multi-tenant SaaS | Conflicts with local-first positioning |
+| Email auto-ingestion | Security blast radius; defer indefinitely |
+| Generic LLM chatbot | Not the product |
+| Custom LLM training | Llama3 + good prompts is sufficient |

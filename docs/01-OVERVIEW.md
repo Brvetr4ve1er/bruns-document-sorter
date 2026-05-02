@@ -2,134 +2,201 @@
 
 ## What BRUNs is
 
-**BRUNs is a local-first document intelligence platform.** It turns operational
-PDFs (shipping documents, identity documents, customs paperwork) into clean,
-structured database rows — without sending anything to the cloud, without paid
-APIs, and without a vendor lock-in surface.
+**BRUNs is a local-first document intelligence platform** for Algerian freight
+forwarders and immigration consultancies. It turns operational PDFs — shipping
+documents, passports, identity cards, customs paperwork — into clean structured
+database rows without cloud dependencies, paid APIs, or vendor lock-in.
 
-The platform ships as a single Python application that runs on a normal Windows
-laptop. It bundles:
+The entire platform runs as a **single Python process** on a Windows laptop.
+One `START_APP.bat` starts everything: Flask UI, document pipeline, BI bridge.
 
-- A PDF text extractor (PyMuPDF)
-- A local LLM client (Ollama, default model `llama3`)
-- An OCR fallback for scanned/image PDFs (Tesseract via `pytesseract`)
-- A passport-MRZ specialist parser (PassportEye + `mrz` library)
-- A typed validation layer (Pydantic v2)
-- A SQLite-based storage layer with isolated databases per domain
-- A vector search engine for semantic queries (ChromaDB)
-- A fuzzy entity resolution engine (RapidFuzz)
-- A Flask REST API for live BI tool connections (Power BI, Tableau, Looker)
-- A web UI (currently Streamlit, migrating to Flask + HTMX + DaisyUI)
+---
 
-## The problem it solves
+## What it replaces
 
-### Concrete problem (Logistics)
+### Logistics workflow (before BRUNs)
 
-A small-to-medium freight forwarder in Algeria handles ~40 container shipments
-per week. For each shipment, they receive 2–4 PDFs from carriers (CMA-CGM, MSC,
-Maersk, Ignazio Messina): booking confirmation, departure notice, bill of
-lading. A clerk re-types the data into an Excel file called **"Containers
-actifs"** — 49 columns of fields like `N° TAN`, `N° Container`, `Date début
-Surestarie`, `Site livraison`, `Centre de réstitution`, `Nbr jour surestarie
-Facturé`, `Taux de change`.
+A freight forwarder receives 2–4 PDFs per shipment from carriers (CMA-CGM, MSC,
+Maersk, Ignazio Messina): booking confirmation, departure notice, bill of lading.
+A clerk **re-types every field** into an Excel workbook called "Containers actifs"
+— 49 columns including container numbers, vessel names, ETDs, ETAs, demurrage
+start dates, exchange rates, customs dates. This workbook feeds Power BI.
 
-This Excel is then opened in Power BI for management dashboards: which
-containers are in demurrage, which carriers are slowest, what's the total
-exposure in DZD this month.
+Three failure modes that cost real money:
+1. **Typos** — wrong container number → wrong container tracked in BI dashboards
+2. **Missed demurrage windows** — clerk forgets `Date début Surestarie` →
+   operator discovers the fine when the invoice arrives, not before
+3. **Latency** — data only enters Power BI after the clerk batches yesterday's PDFs
 
-The current process has three failure modes that cost real money:
+### Travel workflow (before BRUNs)
 
-1. **Typos.** A wrong container number means the wrong shipment shows the wrong
-   status. Customers get told their cargo is at port when it's already been
-   delivered, or vice versa.
-2. **Missed demurrage windows.** If a clerk forgets to enter `Date début
-   Surestarie`, the system can't compute days remaining, and the operator finds
-   out about a fine when it's already on the invoice.
-3. **Latency.** Data only enters the BI tool after the clerk batches up
-   yesterday's PDFs. Management sees yesterday's truth, not today's.
+A visa consultant assembles family case files with passport scans for every
+member. The same person appears across multiple cases (parent on child's case,
+sibling on sponsor's case). Identity resolution is done with copy-paste from
+previous folders. Spelling drift creates "two people" in the file system who
+are the same person.
 
-### Concrete problem (Travel)
+---
 
-A family-immigration consultant in Algeria builds visa case files. Each case
-includes scans of passports, ID cards, birth certificates for every family
-member. The same person appears across multiple cases (a parent listed on a
-child's case, a sibling listed on a sponsor's case). Identity duplication
-across cases is currently solved with copy-paste from previous case folders, and
-spelling drift creates "two people" in the file system who are actually the same
-person.
+## What the platform actually does
 
-### What BRUNs does about it
+### Logistics module
 
-For logistics:
-- Drop the carrier PDF into the upload zone or batch directory.
-- The pipeline extracts `tan_number`, `vessel_name`, `etd`, `eta`, all
-  containers and their seals/sizes.
-- The result is upserted into SQLite using a deterministic key (`TAN` first,
-  fallback to `vessel + ETD`).
-- Power BI sees the new row within seconds via the live REST endpoint.
-- Excel export to the exact 49-column "Containers actifs" format remains
-  available for handoff to teams that still want a workbook.
+```
+Upload PDF → hash → cache check → text extract → LLM extract → validate
+    → store in documents → project into shipments/containers → Power BI ready
+```
 
-For travel:
-- Drop the passport scan in.
-- Tesseract + PassportEye extract the MRZ, the LLM extracts the visual fields,
-  Pydantic normalizes everything.
-- Fuzzy matching (RapidFuzz) compares the new person against existing records.
-  If similarity ≥ 0.85, auto-merge. If 0.60 ≤ score < 0.85, flag for human
-  review.
-- The case folder builds itself.
+- Extracts 50+ fields: TAN, BL number, vessel, IMO, carrier, port, ETD, ETA,
+  all containers with sizes/seals, demurrage terms, free days, exchange rates
+- Deduplicates by TAN (same shipment across Booking + Departure + BL → one row)
+- Calculates demurrage risk per container: days at port, days over free time,
+  USD/DZD cost estimate using tiered carrier rate tables
+- Surfaces D&D at-risk containers in the operator action center
 
-## Who it's for
+### Travel module
 
-**Primary buyers (in priority order):**
+```
+Upload scan → hash → MRZ extract → LLM extract → normalize → match person
+    → store in persons/families/documents_travel → case management
+```
 
-1. **Freight forwarders / customs brokers** in markets where data sovereignty
-   matters (Algeria, Tunisia, Morocco, EU operators handling regulated goods).
-2. **Immigration consultancies and visa agencies** handling family files where
-   the same identities recur across cases.
-3. **Mid-market manufacturing importers** who want to track their own container
-   exposure without buying SAP-level TMS software.
-4. **Power BI consultancies** who want a "data plumbing" layer for clients who
-   are stuck on Excel.
+- PassportEye + `mrz` library extract the MRZ band before the LLM sees the image
+- MRZ-validated values override LLM values for name, DOB, doc number, expiry
+- Person identity matching (currently: exact normalized-name SQL; fuzzy engine
+  built in `core/matching/engine.py`, not yet wired)
+- Family completeness gate: required-docs checklist per role (head/spouse/child),
+  blocks case status advancement until 100% complete
 
-**Secondary expansion candidates:**
+---
 
-- Healthcare clinics ingesting referral letters (same architecture, different
-  prompts and schemas).
-- Legal firms processing case bundles.
-- Any company with a 49-column Excel that humans manually populate from PDFs.
+## Full feature inventory
+
+### Operator UI (Flask + HTMX + DaisyUI)
+
+| Feature | Route | Description |
+|---------|-------|-------------|
+| Mode picker | `/` | Choose logistics or travel mode |
+| Logistics dashboard | `/logistics` | Action center, stats, container table, NL2SQL |
+| Operator action center | `/logistics` | 4-card strip: review queue, D&D risk, gaps, on-track |
+| NL2SQL "Ask your data" | `/logistics` → POST `/logistics/ask` | Plain text → SQL → results table |
+| Activity feed | `/logistics` | Last 20 audit log entries |
+| Document list | `/logistics/documents` | All uploaded docs, keyword + semantic search |
+| Document detail | `/logistics/documents/<id>` | PDF with bounding-box highlights, all extracted fields editable, re-extract diff, cross-doc reconciliation |
+| Bounding box visualization | `/files/logistics/<id>/annotated` | PyMuPDF highlights each extracted value on the source PDF page |
+| Re-extract with diff | modal on document detail | Fresh extraction vs stored, 3-column diff (added/changed/removed) |
+| Cross-doc reconciliation | panel on document detail | Flags vessel/ETD/ETA/container/weight discrepancies across docs sharing same TAN |
+| Review queue | `/logistics/review` | Documents below 0.90 confidence not yet operator-approved |
+| Container detail | `/logistics/containers/<id>` | D&D countdown bar, all operational fields editable |
+| D&D countdown bar | container detail | Days at port vs free days, USD/DZD cost, progress bar, risk color |
+| Pipeline swimlane | `/logistics/swimlane` | Columns: BOOKED → IN_TRANSIT → ARRIVED → DELIVERED → RESTITUTED; D&D risk border color |
+| Spreadsheet view | `/logistics/sheet` | All containers as filterable table |
+| Logistics analytics | `/logistics/analytics` | Status mix, carrier volumes, monthly shipments, avg transit time (Chart.js) |
+| Export | `/logistics/export`, `/logistics/export.csv`, `/logistics/export.xlsx` | 49-column "Containers actifs" format |
+| Settings | `/logistics/settings` | Clear input dir, purge jobs, LLM config |
+| Upload | `/logistics/upload` | Multi-file, doc type selector, HTMX progress polling |
+| Travel dashboard | `/travel` | Stats: persons, families, documents, expiry warnings |
+| Persons list | `/travel/persons` | Search by name/nationality |
+| Person detail | `/travel/persons/<id>` | All extracted fields, linked documents |
+| Families list | `/travel/families` | Case status, next action, member count |
+| Family detail | `/travel/families/<id>` | Completeness gate, case status flow, next action, linked docs |
+| Family ZIP export | `/travel/families/<id>/export` | All source files + CSV summary in ZIP |
+| Expiry heatmap | `/travel/calendar` | 12-month grid, heat = expiry density, click to drill |
+| Travel analytics | `/travel/analytics` | Case status, doc types, nationalities, expiry timeline (Chart.js) |
+| Document list | `/travel/documents` | All travel documents |
+| Travel document detail | `/travel/documents/<id>` | Fields + MRZ data |
+| Travel upload | `/travel/upload` | Same multi-file upload as logistics |
+| Global search | `/search` | Hybrid keyword + ChromaDB semantic across both modules |
+| Print-to-PDF | every page | `@media print` CSS strips nav/glass, forces white bg |
+| Keyboard shortcuts | every page | `/` search, `?` help, `Esc` close, `D/U/R/P/A` navigation |
+| Theme switcher | every page | 31 DaisyUI themes, persisted to localStorage |
+| LLM config modal | every page | Configure provider (Ollama/LMStudio/OpenAI/Anthropic), test connection |
+
+### REST API (BI bridge)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/status` | Health check — returns DB existence per module |
+| `GET /api/logistics/shipments` | Paginated shipment rows |
+| `GET /api/logistics/containers` | Paginated container rows |
+| `GET /api/logistics/shipments_full` | ⭐ Flat container+shipment join, primary Power BI endpoint |
+| `GET /api/travel/persons` | Paginated person rows |
+| `GET /api/travel/families` | All family rows |
+| `GET /api/travel/documents` | Paginated travel document rows |
+
+### LLM providers supported
+
+| Provider | Type | Auth |
+|----------|------|------|
+| Ollama | Local (default) | None |
+| LM Studio | Local | None |
+| OpenAI | Cloud | API key |
+| Anthropic | Cloud | API key |
+
+---
+
+## Architecture in one diagram
+
+```
+Browser
+  │ HTTP (port 7845)
+  ▼
+┌────────────────────────────────────────────────────────────┐
+│  Flask app  (core/api/server.py, 3 063 LOC, 56 routes)     │
+│  ┌──────────────┐  ┌───────────────┐  ┌─────────────────┐  │
+│  │  HTML UI     │  │  REST BI API  │  │  LLM modal      │  │
+│  │  (HTMX/DaisyUI) │  (/api/*)    │  │  (/llm/*)       │  │
+│  └──────┬───────┘  └───────┬───────┘  └─────────────────┘  │
+│         │                  │                                 │
+│  ┌──────▼───────────────────▼──────────────────────────┐    │
+│  │  projections.py  ←  domain-specific table bridge    │    │
+│  └──────────────────────────┬───────────────────────────┘   │
+└─────────────────────────────│──────────────────────────────-┘
+                              │
+              ┌───────────────▼──────────────────┐
+              │  SQLite databases (data/)         │
+              │  • logistics.db                   │
+              │  • travel.db                      │
+              │  • vector/ (ChromaDB)             │
+              └───────────────────────────────────┘
+
+Upload flow:
+  POST /*/upload  →  job_tracker.submit_job()
+                  →  threading.Thread → pipeline/router.py
+                  →  processor.py  (hash → cache → extract → validate → store)
+                  →  projections.py (→ domain tables)
+                  →  vector_db.py  (→ ChromaDB embedding)
+  HTMX polls /*/process-status/<job_id>  →  SSE-like progress display
+```
+
+---
 
 ## Why local-first matters
 
-Three non-negotiable reasons the architecture refuses cloud dependencies:
+1. **Data sovereignty.** Algerian Loi 18-07, plus industry-wide sensitivity
+   around customs and trade data, means many customers will not allow this data
+   off-premises. A local install removes the conversation.
+2. **Cost.** No per-document fee. Processing document #100,000 costs electricity
+   to run Ollama, nothing else.
+3. **Resilience.** Port offices, customs warehouses, and bonded zones often have
+   unreliable internet. The platform works fully offline.
+4. **BI integration.** Power BI's "Web" connector hits `http://localhost:7845/api/...`.
+   Nothing crosses the WAN.
 
-1. **Customer trust.** Customs, immigration, and shipping data are commercially
-   sensitive. Customers in many markets will not allow this data to leave their
-   premises. A local install removes the conversation.
-2. **Cost.** No per-document fee. Once installed, marginal cost of processing
-   document #100,000 is the electricity to run Ollama.
-3. **Resilience.** Works in offline environments — port offices with sketchy
-   internet, customs warehouses, on-premises bonded zones.
+---
 
-This is also why the BI bridge is a **local Flask server**, not a hosted
-service. Power BI's "Web" connector hits `http://localhost:7845/api/...` —
-nothing crosses the WAN.
+## What BRUNs explicitly is not
 
-## What it explicitly is NOT
-
-- **Not a TMS** (Transport Management System). It does not book shipments, it
-  reads documents about shipments.
-- **Not an OCR product.** OCR is one of several internal capabilities. Selling
-  it as "OCR software" undersells it.
-- **Not a SaaS.** It is a local install. There is no multi-tenant cloud version
-  on the roadmap.
+- **Not a TMS.** It reads documents about shipments; it does not book shipments.
+- **Not OCR software.** OCR is one internal capability. The product is structured
+  data extraction + a live BI bridge.
+- **Not a SaaS.** Local install only. No multi-tenant cloud version on the roadmap.
 - **Not a generic LLM wrapper.** Every domain has hand-tuned prompts, strict
   Pydantic schemas, deterministic normalizers, and a fuzzy matcher. The LLM is
   one component, not the product.
 
-## The value, in one sentence
+## The value, one sentence
 
 > BRUNs replaces the clerk-typing-into-Excel workflow with a local pipeline
-> that produces the same Excel file (or a live BI connection) automatically,
-> with the data sovereignty guarantees the cloud-based competition cannot
-> match.
+> that produces the same 49-column Excel file (or a live Power BI connection)
+> automatically — with data sovereignty guarantees no cloud competitor can match.

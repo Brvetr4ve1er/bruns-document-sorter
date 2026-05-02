@@ -74,17 +74,95 @@ def _project_travel(conn: sqlite3.Connection, doc_id: int, d: dict) -> dict:
     gender = (d.get("gender") or d.get("sex") or "").strip() or None
     normalized = _norm_name(full_name)
 
-    # Try to find an existing person with the same normalized name + dob.
+    # ── TD5 wire: fuzzy identity resolution ────────────────────────────────
+    # Replace exact-string matching with the RapidFuzz-based engine. It
+    # catches "Mohamed AbdelKader" == "Mohammed Abdul-Khader" cases that
+    # would otherwise create silent duplicate person rows.
+    #
+    # Decision tree:
+    #   AUTO_MERGED  → reuse the matched person_id
+    #   REVIEW       → reuse the matched person_id BUT log a `matches` row for
+    #                  operator confirmation. Avoids creating duplicates while
+    #                  the operator is uncertain.
+    #   NEW_IDENTITY → fall through to INSERT (new person)
+    #
+    # Falls back to legacy exact-match if the fuzzy engine raises for any
+    # reason — the projection must never block a successful extraction.
     person_id = None
+    match_status = None
+    match_score = None
+
     if normalized:
-        match_sql = "SELECT id FROM persons WHERE normalized_name = ?"
-        params: tuple = (normalized,)
-        if dob:
-            match_sql += " AND (dob = ? OR dob IS NULL)"
-            params = (normalized, dob)
-        row = conn.execute(match_sql, params).fetchone()
-        if row:
-            person_id = row[0]
+        try:
+            from core.matching import resolve_identity
+            from core.schemas.person import Person
+
+            # Pre-filter candidates by 4-char prefix to keep scoring O(1)
+            # against typical caseload sizes. Without this we'd score every
+            # row in `persons` for every upload.
+            prefix = normalized[:4] if len(normalized) >= 4 else normalized
+            cand_rows = conn.execute(
+                """SELECT id, full_name, normalized_name, dob, nationality
+                   FROM persons WHERE normalized_name LIKE ? LIMIT 100""",
+                (prefix + "%",),
+            ).fetchall()
+
+            candidates = []
+            for r in cand_rows:
+                try:
+                    candidates.append(Person(
+                        id=r[0],
+                        full_name=r[1] or "",
+                        normalized_name=r[2] or "",
+                        dob=r[3],
+                        nationality=r[4],
+                    ))
+                except Exception:
+                    # Malformed row in DB — skip without breaking the resolver
+                    continue
+
+            new_person = Person(
+                full_name=full_name or normalized,
+                normalized_name=normalized,
+                dob=dob,
+                nationality=nationality,
+            )
+            result = resolve_identity(new_person, candidates)
+            match_status = result.status
+            match_score = round(result.score, 4) if result.score else 0.0
+
+            if result.status == "AUTO_MERGED" and result.matched_person_id:
+                person_id = result.matched_person_id
+            elif result.status == "REVIEW" and result.matched_person_id:
+                # Probable match — reuse the candidate to avoid duplicates,
+                # but record the pair for human review.
+                person_id = result.matched_person_id
+                try:
+                    conn.execute(
+                        """INSERT INTO matches
+                              (entity_a_id, entity_b_id, score, status)
+                           VALUES (NULL, ?, ?, 'PENDING')""",
+                        (result.matched_person_id, float(result.score)),
+                    )
+                except Exception:
+                    # matches table missing or column mismatch — non-fatal
+                    pass
+        except Exception as fuzzy_err:
+            # Fall back to the legacy exact-match path so projections never
+            # become a blocker. Status string is captured for the summary.
+            match_status = f"FUZZY_FALLBACK:{type(fuzzy_err).__name__}"
+
+        # Legacy fallback path — runs only when fuzzy engine didn't pick a
+        # match (e.g. NEW_IDENTITY decision, or fuzzy crashed).
+        if person_id is None:
+            match_sql = "SELECT id FROM persons WHERE normalized_name = ?"
+            params: tuple = (normalized,)
+            if dob:
+                match_sql += " AND (dob = ? OR dob IS NULL)"
+                params = (normalized, dob)
+            row = conn.execute(match_sql, params).fetchone()
+            if row:
+                person_id = row[0]
 
     inserted_person = 0
     if person_id is None:
@@ -113,6 +191,8 @@ def _project_travel(conn: sqlite3.Connection, doc_id: int, d: dict) -> dict:
     out = {"persons_inserted": inserted_person, "docs_inserted": 1, "person_id": person_id}
     if mrz_summary:
         out["mrz"] = mrz_summary
+    if match_status:
+        out["match"] = {"status": match_status, "score": match_score}
     return out
 
 

@@ -26,7 +26,9 @@ def init_schema(db_path: str):
             confidence REAL DEFAULT 0.0,
             source_file TEXT,
             module TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TEXT,
+            reviewed_by TEXT
         )
         """)
         
@@ -79,53 +81,66 @@ def init_schema(db_path: str):
         """)
         
         # Logistics Tables
+        # NOTE (TD1 fix): column names match the LIVE database that the
+        # server queries. The legacy v3.0 scraper used these exact names; do
+        # not rename without coordinating with projections.py + server.py.
+        # In particular:
+        #   shipments.compagnie_maritime  (not "carrier")
+        #   shipments.document_type       (not "doc_type")
+        #   containers.statut_container   (not "statut")
         conn.execute("""
         CREATE TABLE IF NOT EXISTS shipments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            document_id INTEGER,
             tan TEXT,
-            vessel TEXT,
-            carrier TEXT,
+            item_description TEXT,
+            compagnie_maritime TEXT,
+            port TEXT DEFAULT 'Port d''Alger',
             transitaire TEXT,
-            port TEXT,
+            vessel TEXT,
             etd TEXT,
             eta TEXT,
-            doc_type TEXT,
-            status TEXT,
-            FOREIGN KEY (document_id) REFERENCES documents(id)
+            document_type TEXT,
+            status TEXT DEFAULT 'UNKNOWN',
+            source_file TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            modified_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
-        
+
         conn.execute("""
         CREATE TABLE IF NOT EXISTS containers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            shipment_id INTEGER,
-            container_number TEXT,
+            shipment_id INTEGER NOT NULL,
+            container_number TEXT NOT NULL,
             size TEXT,
             seal_number TEXT,
-            statut TEXT,
+            statut_container TEXT,
             date_livraison TEXT,
             site_livraison TEXT,
             date_depotement TEXT,
             date_debut_surestarie TEXT,
             date_restitution_estimative TEXT,
-            nbr_jours_surestarie_estimes INTEGER,
-            nbr_jours_perdu_douane INTEGER,
+            nbr_jours_surestarie_estimes INTEGER DEFAULT 0,
+            nbr_jours_perdu_douane INTEGER DEFAULT 0,
             date_restitution TEXT,
             restitue_camion TEXT,
             restitue_chauffeur TEXT,
             centre_restitution TEXT,
             livre_camion TEXT,
             livre_chauffeur TEXT,
-            montant_facture_check TEXT,
-            nbr_jour_surestarie_facture INTEGER,
-            montant_facture_da REAL,
+            montant_facture_check TEXT DEFAULT 'No',
+            nbr_jour_surestarie_facture INTEGER DEFAULT 0,
+            montant_facture_da REAL DEFAULT 0,
             n_facture_cm TEXT,
             commentaire TEXT,
             date_declaration_douane TEXT,
             date_liberation_douane TEXT,
-            taux_de_change REAL,
-            FOREIGN KEY (shipment_id) REFERENCES shipments(id)
+            taux_de_change REAL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            modified_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            modified_by TEXT,
+            FOREIGN KEY (shipment_id) REFERENCES shipments(id) ON DELETE CASCADE,
+            UNIQUE (shipment_id, container_number)
         )
         """)
         
@@ -137,7 +152,10 @@ def init_schema(db_path: str):
             head_person_id INTEGER,
             case_reference TEXT,
             address TEXT,
-            notes TEXT
+            notes TEXT,
+            case_status TEXT DEFAULT 'COLLECTING',
+            next_action TEXT,
+            next_action_date TEXT
         )
         """)
         
@@ -163,8 +181,10 @@ def init_schema(db_path: str):
             doc_number TEXT,
             expiry_date TEXT,
             mrz_raw TEXT,
+            original_doc_id INTEGER,
             FOREIGN KEY (person_id) REFERENCES persons(id),
-            FOREIGN KEY (family_id) REFERENCES families(id)
+            FOREIGN KEY (family_id) REFERENCES families(id),
+            FOREIGN KEY (original_doc_id) REFERENCES documents(id)
         )
         """)
         

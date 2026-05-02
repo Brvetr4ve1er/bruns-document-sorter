@@ -34,7 +34,12 @@ class PipelineProcessor:
         job = Job(type="DOCUMENT_EXTRACTION", input_data={"file_path": file_path, "module": module, "doc_type": doc_type})
         job.status = JobStatus.PROCESSING
         job.log(f"Started processing file: {file_path}")
-        
+
+        # TD4 fix: hold the connection in a name visible to `finally` so we
+        # always close it — even when extraction crashes mid-pipeline. Under
+        # load, leaking SQLite connections exhausts file handles and
+        # eventually blocks new uploads.
+        conn = None
         try:
             # ── Step 0: Hash for deduplication ──────────────────────────────
             job.log(f"Hashing file...")
@@ -43,7 +48,7 @@ class PipelineProcessor:
                 while chunk := f.read(8192):
                     file_hash.update(chunk)
             file_hash_hex = file_hash.hexdigest()
-            
+
             conn = get_connection(self.db_path)
             cached = conn.execute(
                 "SELECT result_json FROM extraction_cache WHERE file_hash=?",
@@ -131,11 +136,16 @@ class PipelineProcessor:
                 "extracted_data": extracted_data,
                 "validation":     validation_result
             })
-            conn.close()
-            
+
         except Exception as e:
             job.log(f"Error during processing: {str(e)}")
             job.log(traceback.format_exc())
             job.fail(str(e))
-            
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
         return job

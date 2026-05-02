@@ -38,20 +38,21 @@ FORBIDDEN: dict[str, set[str]] = {
 # Tags that should never appear anywhere — stale references to deleted folders.
 GHOST_TARGETS: set[str] = {
     "streamlit", "logistics_app", "travel_app", "ui", "_legacy", "components",
+    "database_logic", "utils",  # deleted under TD2
 }
 
 # No special root-file rules anymore — app.py at root is gone.
 ROOT_FILE_FORBIDDEN: set[str] = set()
 
 # Directories the scan walks but ignores entirely.
-# `ui/` and `logistics_app/` are legacy Streamlit code present on disk after
-# the git merge restored them, but they are NOT active Flask code — they
-# still import streamlit which is fine for dead files, just not for live code.
+# Legacy Streamlit dirs (logistics_app/, ui/, utils/, database_logic/) were
+# deleted under TD2 — see docs/TECH-DEBT-CLEANUP.md. They no longer exist on
+# disk so we do not list them here. The GHOST_TARGETS check below catches any
+# stale import that survived the deletion.
 EXCLUDE_DIRS = {
     ".venv", ".git", "__pycache__", ".pytest_cache",
     "tessdata", "tesseract_bin", "doc", "trial_files",
     "data", "exports", "node_modules", "build", "dist",
-    "ui", "logistics_app",   # legacy Streamlit — excluded from live-code checks
 }
 
 

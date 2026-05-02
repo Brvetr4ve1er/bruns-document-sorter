@@ -18,12 +18,13 @@ modules/<domain>/
 
 A domain plugs into the platform by:
 1. Defining its Pydantic schemas in `core/schemas/<domain>.py`.
-2. Registering its prompts in `modules/<domain>/prompts.py`.
-3. Adding a domain mode tile to `app.py`.
-4. Getting its own SQLite file in `data/<domain>.db`.
+2. Registering its prompts in `modules/<domain>/prompts.py::init_prompts()`.
+3. Adding upload + dashboard routes to `core/api/server.py` (or a Blueprint).
+4. Adding a mode tile to `core/api/templates/mode_picker.html`.
+5. Getting its own SQLite file in `data/<domain>.db`.
 
-No changes to `core/` are required. If they are, the abstraction in `core/`
-is wrong — fix it before adding the domain.
+No changes to `core/` engine internals are required. If they are, the
+abstraction in `core/` is wrong — fix it before adding the domain.
 
 ---
 
@@ -38,101 +39,91 @@ is wrong — fix it before adding the domain.
 |------|-----------|------------------------|
 | `BOOKING` | Booking confirmation from carrier | `status → BOOKED` |
 | `DEPARTURE` | Departure notice (vessel left origin port) | `status → IN_TRANSIT` |
-| `BILL_OF_LADING` (BL) | Bill of lading | `status → IN_TRANSIT` |
+| `BILL_OF_LADING` | Bill of lading | `status → IN_TRANSIT` |
+| `ARRIVAL_NOTICE` | Avis d'arrivée | `status → ARRIVED` *(planned — see roadmap)* |
+| `OTHER` | Anything else detected | No status change |
 
 ### Carriers normalized
 
-Hard-coded canonical brands in the prompt (`modules/logistics/prompts.py`):
+Hard-coded canonical brands in the v2.0 prompt (`modules/logistics/prompts.py`):
 
-- CMA-CGM (matches: `CMA CGM`, `CMA-CGM`)
-- MSC (matches: `MEDITERRANEAN SHIPPING COMPANY`, `MSC`)
-- Ignazio Messina (matches: `IGNAZIO MESSINA`)
-- Pyramid Lines
-- Maersk
-- Hapag-Lloyd
-- Other (anything else, kept verbatim)
+- `CMA-CGM` (matches: `CMA CGM`, `CMA-CGM`, `CMACGM`)
+- `MSC` (matches: `MEDITERRANEAN SHIPPING COMPANY`, `MSC`)
+- `Ignazio Messina`
+- `Pyramid Lines`
+- `Maersk`
+- `Hapag-Lloyd`
+- `other` (anything not matched above — kept verbatim in `additional_fields`)
 
-Adding a carrier = one line in the prompt + one line in the
-normalizer. No schema changes.
+**Known issue:** Carriers like ONE, Zim, PIL, and Yang Ming fall into "other",
+breaking analytics grouping for those carriers. A carrier lookup table that
+preserves the raw name is a roadmap item.
 
 ### Container size canonicalization
 
-The carrier PDFs use wildly inconsistent abbreviations. The prompt enforces
-four canonical buckets:
+The prompt enforces four canonical buckets:
 
 | Carrier writes | We store |
 |----------------|----------|
-| `40' HIGH CUBE`, `40HC`, `40HQ`, `40 GP`, `40'ST`, `40' DRY` | `40 feet` |
+| `40' HIGH CUBE`, `40HC`, `40HQ`, `40 GP`, `40'ST`, `40' DRY`, `40HC` | `40 feet` |
 | `20' HIGH CUBE`, `20HC`, `20 GP`, `20'ST`, `20' DRY` | `20 feet` |
-| `40 RF`, `40 REEF`, `40 REF` | `40 feet refrigerated` |
-| `20 RF`, `20 REEF`, `20 REF` | `20 feet refrigerated` |
+| `40 RF`, `40 REEF`, `40 REFRIGERATED`, `40HQ RF` | `40 feet refrigerated` |
+| `20 RF`, `20 REEF`, `20 REFRIGERATED` | `20 feet refrigerated` |
 
-This canonicalization is also re-applied at the validator level
-(`core/normalization/codes.py::normalize_size`) — defense in depth.
+### TAN as the primary upsert key
 
-### TAN as the primary key
+The `TAN` (Titre d'Acconage Numéroté) is the customs reference that follows a
+shipment from booking to discharge. Format: `TAN/XXXX/YYYY`.
 
-The `TAN` (Titre d'Acconage Numéroté) is the customs reference number that
-follows a shipment from booking to discharge. Format: `TAN/XXXX/YYYY`.
+Upsert order in `core/api/projections.py::_project_logistics`:
+1. Match on `tan` (exact, case-sensitive). If found → skip INSERT.
+2. No vessel+ETD fallback in the current projection code (that logic lives in
+   the legacy `database_logic/database.py::upsert_shipment` which is dead code).
+3. Else → INSERT new shipment row.
 
-UPSERT order in `logistics_app/database_logic/database.py::upsert_shipment`:
-1. Match on `tan_number`. If found → UPDATE.
-2. Else match on `(vessel_name, etd)` composite. If found → UPDATE.
-3. Else → INSERT.
+Status derivation:
+- `document_type == "BOOKING"` → `status = "BOOKED"`
+- `document_type == "DEPARTURE"` → `status = "IN_TRANSIT"`
+- Anything else → `status = "UNKNOWN"`
 
-This means:
-- A booking arrives → INSERT shipment with status `BOOKED`.
-- A departure notice for the same TAN arrives later → UPDATE same row to
-  `IN_TRANSIT`, fill in actual departure date.
-- A BL arrives weeks later → UPDATE same row, attach container details.
+### The projection column names
 
-The user sees one row per shipment that progresses through statuses, not
-three rows per shipment that they have to mentally merge.
+The live `logistics.db` uses the schema defined in `database_logic/database.py`
+(legacy, but authoritative for the live database). Column names the server
+queries — and that must match the DB — are:
 
-### The 49-column XLSX export
+| Column | Not |
+|--------|-----|
+| `tan` | ~~`tan_number`~~ |
+| `compagnie_maritime` | ~~`shipping_company`~~ |
+| `vessel` | ~~`vessel_name`~~ |
+| `document_type` | ~~`doc_type`~~ |
+| `item_description` | ~~`item`~~ |
+| `source_file` | — |
+| `created_at`, `modified_at` | — |
 
-Implementation: `logistics_app/utils/xlsx_export.py`
+`core/storage/db.py::init_schema()` creates a **different** column set
+(`carrier`, `doc_type` instead of `compagnie_maritime`, `document_type`).
+This is the dual-schema bug — see [09-ROADMAP-IMPROVEMENTS.md](09-ROADMAP-IMPROVEMENTS.md) TD1.
 
-The customer's Power BI was built on top of an Excel file called
-"Containers actifs" with 49 specific French column names. We export the
-identical column list, identical column order, identical column types — so
-the existing Power BI report works without modification when fed our XLSX.
+### XLSX export
 
-Column list lives in `modules/logistics/config.py::XLSX_COLUMNS`.
+Implementation: `core/storage/exporters/xlsx.py`
 
-This is a **deliberate, customer-driven choice**. We could expose a cleaner
-schema, but compatibility with the existing BI investment is the buying
-trigger.
+Produces the 49-column "Containers actifs" workbook with French column names.
+The customer's Power BI report was built on this exact column list — any rename
+breaks it. This is the hard integration contract.
 
-### Computed columns
+### Demurrage calculation
 
-Some columns in the export are computed from raw fields:
+Implementation: `core/api/server.py::_demurrage_info()` and `_calc_demurrage()`
 
-- `Coût Surestaries Estimé (USD)` = `nbr_jours_surestarie_estimes` × per-day
-  rate from carrier rate cards (future feature)
-- `Nbr jours restants pour surestarie` = `date_restitution_estimative` -
-  `today`
-- `Check dépotement-restitution` = days between unloading and container
-  return
-
-These computations live in the export layer, not in the schema, so the raw
-DB stays normalized.
-
-### Logistics edit flow
-
-The Streamlit "Edit Container" page exposes 25+ operational fields organized
-in four tabs:
-
-| Tab | Fields |
-|-----|--------|
-| Status & Delivery | `statut_container`, `size`, `site_livraison`, delivery/dépotement/restitution dates |
-| Transport | `livre_camion`, `livre_chauffeur`, `restitue_camion`, `restitue_chauffeur`, `centre_restitution` |
-| Demurrage & Billing | `date_debut_surestarie`, days estimated/customs/billed, `taux_de_change`, `montant_facture_da`, `n_facture_cm` |
-| Douane | `date_declaration_douane`, `date_liberation_douane`, `commentaire` |
-
-These fields are NOT extracted from PDFs — they are operational data the user
-adds after the container has cleared customs. The pipeline gets the shipment
-into the system; the user fills in operational truth as it happens.
+A tiered carrier rate structure is hardcoded (CMA-CGM rates from actual BL
+CFA0869742). Rates for other carriers use the same tiers as a default.
+The LLM prompt now extracts `free_days` and `demurrage_terms` from documents,
+but the projection layer does not yet read these back into the calculation —
+the hardcoded per-carrier free-day defaults are used instead. Fixing this is
+tracked in the roadmap.
 
 ---
 
@@ -144,81 +135,64 @@ into the system; the user fills in operational truth as it happens.
 
 | Type | Specialist parser? | LLM used? |
 |------|-------------------|-----------|
-| `PASSPORT` | Yes — PassportEye + `mrz` for MRZ band | Yes — for visual fields not in MRZ |
+| `PASSPORT` | Yes — PassportEye + `mrz` for MRZ band | Yes — for visual fields |
 | `ID_CARD` | Yes — same MRZ checkers | Yes — for visual fields |
 | `BIRTH_CERTIFICATE` | No | Yes — full LLM extraction |
+| `VISA` | No | Yes |
+| Others (`UNKNOWN`) | No | Yes |
 
 ### Why MRZ parsing first
 
 The MRZ band on a passport encodes name, DOB, nationality, document number,
-expiry date, and gender in a fixed-width OCR-friendly format with check
-digits. A specialist parser:
+expiry date, and gender in a fixed-width OCR-friendly format with check digits.
+A specialist parser:
 - Validates check digits → catches OCR errors before they hit the DB.
 - Extracts ISO 3166 nationality codes deterministically.
-- Runs in microseconds.
+- Runs in milliseconds.
 
-Implementation: `modules/travel/mrz_parser.py`
+In the projection (`core/api/projections.py::_project_travel`), MRZ data
+**overrides LLM data** for the fields where MRZ has it — LLM keeps any extra
+fields (issue_date, place_of_birth, etc.) that MRZ doesn't cover.
 
+### Identity resolution — current state
+
+**What exists:** `core/matching/engine.py` implements `resolve_identity()` with
+RapidFuzz-based fuzzy matching:
+
+```
+score = 0.6 × name_similarity (RapidFuzz token-set ratio on normalized names)
+      + 0.3 × dob_similarity  (binary: 1.0 if equal, 0.0 if different)
+      + 0.1 × nationality_similarity (binary on 3-letter ISO codes)
+```
+
+Thresholds (`core/matching/thresholds.py`):
+- ≥ 0.85 → `AUTO_MERGED`
+- ≥ 0.60 → `REVIEW`
+- < 0.60 → `NEW_IDENTITY`
+
+**What's wired:** `projections.py` currently uses a plain SQL query:
 ```python
-for Checker in [TD3, TD1, TD2, MRVA, MRVB]:
-    try:
-        checker = Checker(mrz_string)
-        if checker:
-            fields = checker.fields()
-            return {...}
-    except Exception:
-        pass
+SELECT id FROM persons WHERE normalized_name = ?
 ```
+This is exact equality only. The fuzzy matching engine is complete but **not
+called**. This means name variations (transliteration drift, spelling differences)
+create duplicate person rows.
 
-It tries each checker in order (TD3 = passport, TD1 = ID card, etc.) and
-returns the first valid parse.
-
-### Identity resolution
-
-This is the core differentiator vs "just OCR a passport" products.
-
-Implementation: `core/matching/engine.py`
-
-When a new passport is processed, we compute similarity vs every existing
-`Person` record:
-
-```
-score = 0.6 * name_similarity (RapidFuzz on normalized names)
-      + 0.3 * dob_similarity  (binary)
-      + 0.1 * nationality_similarity (binary)
-```
-
-Three outcomes:
-
-| Score | Status | What happens |
-|-------|--------|--------------|
-| ≥ 0.85 | `AUTO_MERGED` | New scan attached to existing person; case folder updates |
-| 0.60 – 0.85 | `REVIEW` | Surfaces in match-review panel for human decision |
-| < 0.60 | `NEW_IDENTITY` | New `Person` row inserted |
+Wiring the matching engine is the highest-priority improvement for the Travel
+module. See [09-ROADMAP-IMPROVEMENTS.md](09-ROADMAP-IMPROVEMENTS.md).
 
 ### Family construction
 
-A `Family` record links multiple `Person` records via `family_id`. When
-processing a multi-passport case bundle:
+A `Family` record links multiple `Person` records via `family_id`. The families
+table has case management fields: `case_status` (COLLECTING/READY/IN_REVIEW/
+SUBMITTED/APPROVED/REJECTED), `next_action`, `next_action_date`, `head_person_id`.
 
-1. Each passport → `Person` row (after matching).
-2. The user (or a future heuristic) groups them into a `Family`.
-3. The `Family` has a `case_reference` for the immigration file.
-4. Subsequent processing of related documents (birth certificates, marriage
-   certificates) attaches to the same family.
+The family completeness gate (`core/api/server.py::_family_completeness`) checks
+required documents per role (head/spouse/child/default) and blocks case
+advancement if any required document type is missing.
 
-This is the "second-brain" property of the Travel module: the same identities
-flow naturally across cases instead of being copy-pasted.
-
-### Document-types extension path
-
-To add `MARRIAGE_CERTIFICATE`:
-1. Add prompt in `modules/travel/prompts.py`:
-   `register_prompt("travel", "MARRIAGE_CERTIFICATE", "1.0", PROMPT_MARRIAGE)`
-2. Add a `MarriageCertificate` Pydantic model in `core/schemas/person.py` (or
-   a new file).
-3. Pipeline router (`core/pipeline/router.py`) gets a new case branch.
-4. Done. No `core/` engine changes.
+Per-family ZIP export is available at `/travel/families/<id>/export`, bundling
+all source files by member plus a CSV summary.
 
 ---
 
@@ -226,14 +200,16 @@ To add `MARRIAGE_CERTIFICATE`:
 
 Features the engine provides that any module can use:
 
-### 1. Cryptographic dedup cache (`core/storage/db.py::extraction_cache` table)
+### 1. Cryptographic dedup cache (`extraction_cache` table)
 
-Same file → same hash → cached result. Module-agnostic.
+Same file + same prompt version → cached result. Module-agnostic. The cache
+stores `file_hash`, `result_json`, and `prompt_version` — stale caches from
+old prompt versions are automatically bypassed.
 
 ### 2. Per-file audit log (`core/audit/logger.py`)
 
-Writes `data/logs/<filename>.json` with full extraction result, validation
-status, DB action, errors. Module-agnostic.
+Writes `data/logs/<filename>_<timestamp>.json` with full extraction result,
+validation status, DB action, errors. Module-agnostic.
 
 ### 3. Vector search (`core/search/vector_db.py`)
 
@@ -243,15 +219,28 @@ modules.
 
 ### 4. BI bridge (`core/api/server.py`)
 
-Logistics endpoints already exist. Travel endpoints (`/api/travel/persons`,
-`/api/travel/families`, `/api/travel/documents`) already exist. Adding a
-new domain = adding new routes following the same pattern.
+Logistics endpoints: `/api/logistics/shipments`, `/api/logistics/containers`,
+`/api/logistics/shipments_full` (the primary Power BI endpoint).
+Travel endpoints: `/api/travel/persons`, `/api/travel/families`,
+`/api/travel/documents`. Adding a new domain = adding routes following this
+pattern.
+
+### 5. NL2SQL ("Ask your data")
+
+The logistics dashboard exposes a natural-language query box. User types a
+question; the configured LLM converts it to a SELECT query; the app executes
+it and renders the result. Security: only SELECT statements are allowed
+(prefix-checked — a more robust guard is tracked in the roadmap).
+
+### 6. PDF annotation view
+
+`/files/<module>/<doc_id>/annotated` renders a PNG of the source PDF with
+extracted field values highlighted. Uses PyMuPDF's text search + annotation API.
+Clicking a field in the detail view can jump to its location in the PDF.
 
 ---
 
 ## Future domains on the consideration list
-
-Not on the active roadmap but architecturally cheap to add:
 
 | Domain | Document types | Specialist parser? |
 |--------|----------------|-------------------|
@@ -260,5 +249,5 @@ Not on the active roadmap but architecturally cheap to add:
 | HR onboarding | Diploma, employment certificate, reference letter | None known |
 | Real estate | Title deed, valuation report, mortgage statement | None known |
 
-The pattern is: if a customer in any of these spaces says "we have a 49-column
-Excel that someone fills out by reading PDFs," BRUNs is the answer.
+The cost-of-new-domain is ~3 days for a competent developer today. Target: ~1
+day with a code-gen template.
