@@ -26,7 +26,9 @@ echo.
 
 set "VENV_DIR=.venv"
 set "MIN_PY_MAJOR=3"
-set "MIN_PY_MINOR=10"
+:: 3.11 is the floor — pandas 3.x dropped Python 3.10 wheels, so installs on
+:: 3.10 try to build pandas from source and fail without Visual C++ Tools.
+set "MIN_PY_MINOR=11"
 
 :: ── Step 1: Python check ────────────────────────────────────────────────────
 echo  [1/7] Checking Python installation...

@@ -139,8 +139,10 @@ echo.
 echo  To stop: press Ctrl+C in this window, then close it.
 echo.
 
-:: Open the URL after a short delay so the browser doesn't beat the server up.
-start "" /min cmd /c "timeout /t 2 >nul && start http://localhost:%PORT%/"
+:: Open the URL once the server is actually accepting requests. We poll
+:: /api/status for up to 30 seconds before launching the browser, so the
+:: user never sees "connection refused" on a cold first launch.
+start "" /b cmd /c "powershell -NoProfile -Command ^"$ok = $false; for ($i=0; $i -lt 30; $i++) { try { $r = Invoke-WebRequest -Uri 'http://localhost:%PORT%/api/status' -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop; $ok = $true; break } catch { Start-Sleep -Seconds 1 } }; if ($ok) { Start-Process 'http://localhost:%PORT%/' }^""
 
 python -m core.api.server
 set "RC=!ERRORLEVEL!"

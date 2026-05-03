@@ -122,12 +122,21 @@ echo "Open your browser at: http://localhost:${PORT}/"
 echo "Stop with Ctrl+C."
 echo
 
-# Best-effort browser open after a short delay (non-blocking).
+# Best-effort browser open AFTER the server is actually accepting requests.
+# Polls /api/status for up to 30 seconds. Avoids "connection refused" on a
+# cold first launch where Python imports take longer than 2 s.
 (
-    sleep 2
-    if command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:${PORT}/" >/dev/null 2>&1
-    elif command -v open >/dev/null 2>&1; then open "http://localhost:${PORT}/" >/dev/null 2>&1
-    fi
+    for _ in $(seq 1 30); do
+        if curl -fsS --max-time 1 "http://localhost:${PORT}/api/status" >/dev/null 2>&1; then
+            if command -v xdg-open >/dev/null 2>&1; then
+                xdg-open "http://localhost:${PORT}/" >/dev/null 2>&1
+            elif command -v open >/dev/null 2>&1; then
+                open "http://localhost:${PORT}/" >/dev/null 2>&1
+            fi
+            break
+        fi
+        sleep 1
+    done
 ) &
 
 exec python -m core.api.server

@@ -25,6 +25,13 @@ import logging.handlers
 import os
 from pathlib import Path
 
+# ROOT-relative path resolution. Without this, `data/logs` is interpreted
+# relative to the current working directory — which breaks when the user runs
+# `python -m core.api.server` from any directory other than the repo root,
+# or when the launcher is invoked from a Windows shortcut whose "Start in"
+# field points elsewhere.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
 _CONFIGURED = False
 
 
@@ -37,18 +44,28 @@ def configure_logging(
     """Configure root logger. Returns the path to the active log file.
 
     Safe to call multiple times — only the first call attaches handlers.
+    Default log dir: <repo>/data/logs/  (override via BRUNS_LOG_DIR env var).
     """
     global _CONFIGURED
     root = logging.getLogger()
     if _CONFIGURED:
         return Path(getattr(configure_logging, "_log_path", ""))
 
-    log_dir = log_dir or os.environ.get("BRUNS_LOG_DIR") or "data/logs"
+    # Resolve the log directory. Precedence:
+    #   1. explicit log_dir kwarg (rare — testing only)
+    #   2. BRUNS_LOG_DIR env var
+    #   3. <repo>/data/logs/  (the canonical location)
+    if log_dir is None:
+        env = os.environ.get("BRUNS_LOG_DIR")
+        log_dir_path = Path(env) if env else (_REPO_ROOT / "data" / "logs")
+    else:
+        log_dir_path = Path(log_dir)
+
     level_name = (level or os.environ.get("BRUNS_LOG_LEVEL") or "INFO").upper()
     log_level = getattr(logging, level_name, logging.INFO)
 
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
-    log_path = Path(log_dir) / "bruns.log"
+    log_dir_path.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir_path / "bruns.log"
 
     fmt = logging.Formatter(
         "%(asctime)s %(levelname)-7s %(name)s — %(message)s",

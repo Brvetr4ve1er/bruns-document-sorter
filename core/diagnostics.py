@@ -164,6 +164,54 @@ def check_repo_layout(r: Report) -> None:
                    "Re-clone the repository or check git status. UI files in core/api/static/ are committed.")
 
 
+def check_templates(r: Report) -> None:
+    """Verify every template referenced from server.py exists on disk.
+
+    This was the actual root cause of the 'internal server error' on the
+    friend's machine — `*.html` was previously in `.gitignore`, so all 36
+    templates were silently absent from a fresh clone. Flask started fine,
+    then the first request raised `jinja2.exceptions.TemplateNotFound`.
+    """
+    r.section("Jinja2 templates")
+    templates_dir = ROOT / "core" / "api" / "templates"
+    if not templates_dir.is_dir():
+        r.fail("templates dir",
+               f"{templates_dir} does not exist",
+               "Templates directory missing — re-clone the repository.")
+        return
+
+    on_disk = sorted(p.relative_to(templates_dir).as_posix()
+                     for p in templates_dir.rglob("*.html"))
+    if len(on_disk) == 0:
+        r.fail("template files",
+               "directory exists but contains zero .html files",
+               "This usually means '*.html' was in .gitignore on the clone "
+               "machine. Verify .gitignore does NOT contain a bare '*.html' "
+               "rule, then run: git pull")
+        return
+    r.ok("template files", f"{len(on_disk)} templates on disk")
+
+    # Cross-check: every render_template() reference in server.py must exist.
+    server_py = ROOT / "core" / "api" / "server.py"
+    try:
+        src = server_py.read_text(encoding="utf-8")
+    except Exception as e:
+        r.warn("server.py read", f"{e}")
+        return
+    import re as _re
+    referenced = set(_re.findall(
+        r"render_template\(\s*[\"\'](?P<n>[a-zA-Z][a-zA-Z0-9_/\.]+\.html)[\"\']", src
+    ))
+    missing = sorted(t for t in referenced if t not in set(on_disk))
+    if missing:
+        for t in missing:
+            r.fail(f"  template: {t}",
+                   "referenced by server.py but missing on disk",
+                   "Re-clone the repository or restore the file from git.")
+    else:
+        r.ok("server.py template references", f"{len(referenced)} all exist on disk")
+
+
 def check_dependencies(r: Report) -> None:
     r.section("Python dependencies")
     deps = [
@@ -450,6 +498,7 @@ def run() -> int:
     check_python(r)
     check_env_summary(r)
     check_repo_layout(r)
+    check_templates(r)              # <-- NEW: catches the .gitignore *.html bug
     check_dependencies(r)
     check_tesseract(r)
     check_ollama(r)

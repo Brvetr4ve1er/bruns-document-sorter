@@ -43,14 +43,15 @@ ensure_traineddata() {
 
 # ── Step 1: Python ──────────────────────────────────────────────────────────
 echo "[1/7] Checking Python..."
+# Min Python is 3.11 — pandas 3.x dropped 3.10 wheels.
 PYTHON=""
-for cand in python3.13 python3.12 python3.11 python3.10 python3 python; do
+for cand in python3.13 python3.12 python3.11 python3 python; do
     if command -v "$cand" >/dev/null 2>&1; then
         PY_VER=$("$cand" --version 2>&1 | awk '{print $2}')
         PY_MAJOR=${PY_VER%%.*}
         PY_REST=${PY_VER#*.}
         PY_MINOR=${PY_REST%%.*}
-        if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 10 ]]; then
+        if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 11 ]]; then
             PYTHON="$cand"
             echo "      ${GREEN}[OK]${RESET} Found $cand ($PY_VER)"
             break
