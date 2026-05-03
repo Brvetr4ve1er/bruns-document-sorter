@@ -112,16 +112,24 @@ echo
 echo "[5/7] Checking Ollama..."
 if curl -fsS --max-time 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
     echo "      ${GREEN}[OK]${RESET} Ollama is running."
-    if curl -fsS --max-time 3 http://localhost:11434/api/tags | grep -q "llama3"; then
-        echo "      ${GREEN}[OK]${RESET} llama3 model available."
+    # Prefer llama3.2:3b (~2 GB, ~5x faster on CPU than llama3:8b for the
+    # structured-extraction prompts BRUNs uses). Fall back to llama3 if user
+    # already has it.
+    TAGS_JSON=$(curl -fsS --max-time 3 http://localhost:11434/api/tags || true)
+    if echo "$TAGS_JSON" | grep -q "llama3.2:3b"; then
+        echo "      ${GREEN}[OK]${RESET} llama3.2:3b model available (recommended)."
+    elif echo "$TAGS_JSON" | grep -q '"llama3'; then
+        echo "      ${GREEN}[OK]${RESET} llama3-family model available."
+        echo "      ${YELLOW}[tip]${RESET} For faster extraction on CPU, run: ollama pull llama3.2:3b"
     else
-        read -r -p "      Pull llama3 now? (~4.7 GB) [y/N]: " yn
-        if [[ "${yn:-N}" =~ ^[Yy]$ ]]; then ollama pull llama3; fi
+        read -r -p "      Pull llama3.2:3b now? (~2 GB, recommended) [Y/n]: " yn
+        yn=${yn:-Y}
+        if [[ "${yn}" =~ ^[Yy]$ ]]; then ollama pull llama3.2:3b; fi
     fi
 else
     echo "      ${YELLOW}[!]${RESET} Ollama is not running."
     echo "          Install:  https://ollama.com/download"
-    echo "          Then:     ollama pull llama3"
+    echo "          Then:     ollama pull llama3.2:3b      # ~2 GB, recommended"
     read -r -p "          Press Enter to continue..."
 fi
 echo

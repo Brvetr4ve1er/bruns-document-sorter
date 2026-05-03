@@ -214,32 +214,41 @@ def check_templates(r: Report) -> None:
 
 def check_dependencies(r: Report) -> None:
     r.section("Python dependencies")
+    # (import_name, dist_name, label)
+    # dist_name is what pip/PyPI calls the package; that's where importlib.metadata
+    # looks. Avoids Flask 3.1's DeprecationWarning on `flask.__version__`.
     deps = [
-        ("flask", "Flask"),
-        ("flask_cors", "flask-cors"),
-        ("pydantic", "pydantic"),
-        ("requests", "requests"),
-        ("fitz", "PyMuPDF"),
-        ("pytesseract", "pytesseract"),
-        ("PIL", "Pillow"),
-        ("passporteye", "passporteye"),
-        ("mrz", "mrz"),
-        ("chromadb", "chromadb"),
-        ("pandas", "pandas"),
-        ("openpyxl", "openpyxl"),
-        ("rapidfuzz", "RapidFuzz"),
+        ("flask",       "flask",       "Flask"),
+        ("flask_cors",  "flask-cors",  "flask-cors"),
+        ("pydantic",    "pydantic",    "pydantic"),
+        ("requests",    "requests",    "requests"),
+        ("fitz",        "PyMuPDF",     "PyMuPDF"),
+        ("pytesseract", "pytesseract", "pytesseract"),
+        ("PIL",         "Pillow",      "Pillow"),
+        ("passporteye", "passporteye", "passporteye"),
+        ("mrz",         "mrz",         "mrz"),
+        ("chromadb",    "chromadb",    "chromadb"),
+        ("pandas",      "pandas",      "pandas"),
+        ("openpyxl",    "openpyxl",    "openpyxl"),
+        ("rapidfuzz",   "rapidfuzz",   "RapidFuzz"),
     ]
-    for module, label in deps:
+    from importlib.metadata import version as _meta_version, PackageNotFoundError
+    for module, dist, label in deps:
         try:
-            mod = __import__(module)
-            ver = getattr(mod, "__version__", "?")
-            r.ok(f"  {label}", str(ver))
+            __import__(module)
         except ImportError as e:
             r.fail(f"  {label}", str(e),
                    "Run INSTALL.bat (or install.sh). It does pip install -r requirements.txt.")
+            continue
         except Exception as e:
             r.fail(f"  {label}", f"{type(e).__name__}: {e}",
                    "Re-create the venv: delete .venv\\ then re-run INSTALL.bat")
+            continue
+        try:
+            ver = _meta_version(dist)
+        except PackageNotFoundError:
+            ver = "?"
+        r.ok(f"  {label}", str(ver))
 
 
 def check_tesseract(r: Report) -> None:

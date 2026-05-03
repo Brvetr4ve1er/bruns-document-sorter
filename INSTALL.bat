@@ -143,19 +143,26 @@ echo  [5/7] Checking Ollama (local LLM runtime)...
 powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop; exit 0 } catch { exit 1 }" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo       [OK] Ollama is running on http://localhost:11434
-    echo       Checking for llama3 model...
-    powershell -NoProfile -Command "$r = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -UseBasicParsing; if ($r.Content -match 'llama3') { exit 0 } else { exit 1 }" >nul 2>&1
+    echo       Checking for a recommended model...
+    :: Prefer llama3.2:3b (~2 GB, ~5x faster on CPU than llama3:8b for our prompts)
+    powershell -NoProfile -Command "$r = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -UseBasicParsing; if ($r.Content -match 'llama3.2:3b') { exit 0 } else { exit 1 }" >nul 2>&1
     if %ERRORLEVEL% EQU 0 (
-        echo       [OK] llama3 model is available.
+        echo       [OK] llama3.2:3b model is available ^(recommended^).
     ) else (
-        echo.
-        echo  [!] llama3 model not found in Ollama.
-        set /p "ynm=  Pull it now? (downloads ~4.7 GB) (Y/N): "
-        if /i "!ynm!"=="y" (
-            echo       Pulling llama3 ...
-            ollama pull llama3
+        powershell -NoProfile -Command "$r = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -UseBasicParsing; if ($r.Content -match 'llama3') { exit 0 } else { exit 1 }" >nul 2>&1
+        if !ERRORLEVEL! EQU 0 (
+            echo       [OK] A llama3-family model is available.
+            echo       [tip] For faster extraction on CPU, run: ollama pull llama3.2:3b
         ) else (
-            echo       [skipped] Pull manually with: ollama pull llama3
+            echo.
+            echo  [!] No llama3 model found in Ollama.
+            set /p "ynm=  Pull llama3.2:3b now? (~2 GB, recommended) (Y/N): "
+            if /i "!ynm!"=="y" (
+                echo       Pulling llama3.2:3b ...
+                ollama pull llama3.2:3b
+            ) else (
+                echo       [skipped] Pull manually with: ollama pull llama3.2:3b
+            )
         )
     )
 ) else (
@@ -165,7 +172,7 @@ if %ERRORLEVEL% EQU 0 (
     echo      until you install + start Ollama.
     echo.
     echo      Install from:  https://ollama.com/download
-    echo      After install: open PowerShell and run:  ollama pull llama3
+    echo      After install: open PowerShell and run:  ollama pull llama3.2:3b
     echo.
     set /p "ack=  Press Enter to continue with install (Ollama can be added later): "
 )

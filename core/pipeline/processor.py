@@ -17,15 +17,22 @@ class PipelineProcessor:
         self.db_path = db_path
         
     def _extract_with_retry(self, text: str, module: str, doc_type: str, job: Job):
-        """Run LLM extraction with automatic retry on failure."""
+        """Run LLM extraction. One retry only — a timeout retry just doubles the wait."""
+        import time as _t
         max_retries = 2
         for attempt in range(max_retries):
+            t0 = _t.monotonic()
             try:
                 result = self.llm_client.extract(text, module=module, doc_type=doc_type)
-                job.log(f"LLM extraction successful on attempt {attempt + 1}.")
+                dt = _t.monotonic() - t0
+                job.log(f"LLM extract OK in {dt:.1f}s (attempt {attempt + 1}, "
+                        f"chars_in={len(text)}, fields_out={len(result.data)})")
                 return result
             except Exception as e:
-                job.log(f"Extraction failed on attempt {attempt + 1}: {e}")
+                dt = _t.monotonic() - t0
+                job.log(f"LLM extract FAILED after {dt:.1f}s "
+                        f"(attempt {attempt + 1}/{max_retries}): "
+                        f"{type(e).__name__}: {e}")
                 job.retries += 1
                 if attempt == max_retries - 1:
                     raise e

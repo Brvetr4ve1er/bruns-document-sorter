@@ -34,7 +34,7 @@ def _resolve_llm_settings() -> dict:
         "model":       "llama3",
         "api_key":     "",
         "temperature": 0.1,
-        "timeout":     120,
+        "timeout":     300,
     }
 
     # 1. Overlay user-saved settings (from the LLM modal)
@@ -78,7 +78,7 @@ def route_file(file_path: str, module: str, doc_type: str = "UNKNOWN"):
     llm_client = LLMClient(
         ollama_url=cfg["generate_url"],
         model=cfg["model"],
-        timeout=int(cfg.get("timeout", 120)),
+        timeout=int(cfg.get("timeout", 300)),
         temperature=float(cfg.get("temperature", 0.1)),
     )
     processor = PipelineProcessor(llm_client, db_path)

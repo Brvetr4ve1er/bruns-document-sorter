@@ -95,7 +95,7 @@ else
     echo "    Document processing requires Ollama. You can still browse existing data."
     echo
     echo "    Install:  https://ollama.com/download"
-    echo "    Then:     ollama pull llama3"
+    echo "    Then:     ollama pull llama3.2:3b      # ~2 GB, recommended"
     echo
     read -r -p "    Continue anyway? [y/N]: " cont
     if [[ ! "${cont:-N}" =~ ^[Yy]$ ]]; then

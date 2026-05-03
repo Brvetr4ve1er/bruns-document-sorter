@@ -58,8 +58,18 @@ class LLMClient:
     override `_post_generate` only.
     """
 
-    def __init__(self, ollama_url: str, model: str, timeout: int = 120,
+    def __init__(self, ollama_url: str, model: str, timeout: int = 300,
                  temperature: float = 0.1, num_ctx: int = 8192):
+        # Default timeout 300s (was 120s): llama3 on CPU + cold-load + format=json
+        # routinely takes 90–240s for the first chunk. OLLAMA_TIMEOUT env var
+        # overrides per-deployment.
+        import os as _os
+        env_timeout = _os.environ.get("OLLAMA_TIMEOUT")
+        if env_timeout:
+            try:
+                timeout = int(env_timeout)
+            except ValueError:
+                pass
         self.ollama_url = ollama_url
         self.model = model
         self.timeout = timeout
@@ -81,7 +91,20 @@ class LLMClient:
             # Ollama-supported JSON-mode hint. Drastically reduces drift.
             payload["format"] = "json"
 
-        r = requests.post(self.ollama_url, json=payload, timeout=self.timeout)
+        try:
+            r = requests.post(self.ollama_url, json=payload, timeout=self.timeout)
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(
+                f"Ollama not reachable at {self.ollama_url}. "
+                f"Start Ollama (https://ollama.com) and run `ollama pull {self.model}`. "
+                f"Underlying error: {e}"
+            )
+        except requests.exceptions.ReadTimeout:
+            raise RuntimeError(
+                f"Ollama generation exceeded {self.timeout}s. "
+                f"Slow CPU or large prompt. Try a smaller model "
+                f"(`ollama pull llama3.2:1b`) or set OLLAMA_TIMEOUT=600 in the env."
+            )
         r.raise_for_status()
         return r.json().get("response", "")
 

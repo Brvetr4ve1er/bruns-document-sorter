@@ -105,7 +105,7 @@ if %ERRORLEVEL% NEQ 0 (
     echo      You can still browse existing data without it.
     echo.
     echo      Install:  https://ollama.com/download
-    echo      Then:     ollama pull llama3
+    echo      Then:     ollama pull llama3.2:3b      (~2 GB, recommended)
     echo.
     set /p "cont=  Continue anyway? (Y/N): "
     if /i "!cont!" NEQ "y" (
